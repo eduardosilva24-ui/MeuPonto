@@ -18,7 +18,7 @@ function doGet(e) {
   var params;
   try {
     params = JSON.parse(rawParam);
-  } catch (_) {
+  } catch (error) {
     params = {};
   }
 
