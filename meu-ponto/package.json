@@ -1,9 +1,0 @@
-{
-  "name": "meu-ponto",
-  "private": true,
-  "version": "1.0.0",
-  "scripts": {
-    "start": "npx http-server . -p 3000",
-    "build": "echo 'Frontend static: no build step required'"
-  }
-}

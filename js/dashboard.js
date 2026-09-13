@@ -1,75 +1,47 @@
-// Cálculos de apresentação do painel de saldo. A fonte de verdade continua na API.
-const Dashboard = (() => {
-  function toDateKey(date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+(function () {
+  function renderDashboardSummary(monthData, dateKey) {
+    const hero = document.getElementById('closing-saldo');
+    const message = document.getElementById('closing-saldo-message');
+    const progressFill = document.getElementById('closing-progress-fill');
+    const progressLabel = document.getElementById('closing-progress-label');
+    const expected = document.getElementById('closing-previstas');
+    const worked = document.getElementById('closing-trabalhadas');
+    const diasTrabalhados = document.getElementById('closing-dias-trabalhados');
+    const diasRestantes = document.getElementById('closing-dias-restantes');
+    const diasIncompletos = document.getElementById('closing-dias-incompletos');
+    const faltantes = document.getElementById('closing-horas-faltantes');
+    const extras = document.getElementById('closing-horas-extras');
+    const folga = document.getElementById('closing-dias-folga');
+    const feriado = document.getElementById('closing-dias-feriado');
+    const mes = document.getElementById('closing-dias-mes');
+
+    if (!monthData) return;
+
+    const planned = Number(monthData.totalPlanned || 0);
+    const workedMinutes = Number(monthData.totalWorked || 0);
+    const saldo = workedMinutes - planned;
+    const progressRatio = planned > 0 ? Math.min((workedMinutes / planned) * 100, 100) : 0;
+
+    hero.textContent = PontoCalc.minutesToText(saldo);
+    hero.parentElement.classList.toggle('saldo-positive', saldo >= 0);
+    hero.parentElement.classList.toggle('saldo-negative', saldo < 0);
+    message.textContent = saldo >= 0 ? 'Você está em saldo positivo.' : 'Você ainda está abaixo do esperado.';
+    progressFill.style.width = progressRatio + '%';
+    progressLabel.textContent = PontoCalc.minutesToText(workedMinutes) + ' / ' + PontoCalc.minutesToText(planned);
+
+    expected.textContent = PontoCalc.minutesToText(planned);
+    worked.textContent = PontoCalc.minutesToText(workedMinutes);
+    diasTrabalhados.textContent = String(monthData.countDaysWorked || 0);
+    diasRestantes.textContent = String(Math.max((monthData.daysInMonth || 0) - (monthData.countDaysWorked || 0), 0));
+    diasIncompletos.textContent = String(monthData.countIncomplete || 0);
+    faltantes.textContent = PontoCalc.minutesToText(Math.max(-saldo, 0));
+    extras.textContent = PontoCalc.minutesToText(Math.max(saldo, 0));
+    folga.textContent = '0';
+    feriado.textContent = '0';
+    mes.textContent = monthData.daysInMonth ? monthData.daysInMonth + ' dias' : '—';
   }
 
-  function getWeekRange(todayKey = Calc.getTodayKey()) {
-    const [year, month, day] = todayKey.split('-').map(Number);
-    const start = new Date(year, month - 1, day, 12);
-    start.setHours(12, 0, 0, 0);
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    return { start: toDateKey(start), end: toDateKey(end) };
-  }
-
-  function summarize(days, range, todayKey = Calc.getTodayKey()) {
-    const scoped = days.filter((day) => day && day.dateKey >= range.start && day.dateKey <= range.end);
-    let worked = 0;
-    let planned = 0;
-    let extras = 0;
-    let missing = 0;
-    let daysWorked = 0;
-    let daysRemaining = 0;
-    let incomplete = 0;
-    let folgas = 0;
-    let feriados = 0;
-
-    scoped.forEach((day) => {
-      const isFuture = day.dateKey > todayKey;
-      const isComplete = CalendarUI.isComplete(day);
-      const dayWorked = Number(day.totalWorkedMinutes) || 0;
-      const dayPlanned = Number(day.predictedMinutes) || 0;
-
-      if (day.nextAction === 'FERIADO') { feriados += 1; return; }
-      if (day.nextAction === 'FOLGA') { folgas += 1; return; }
-      if (isFuture) {
-        if (day.available) daysRemaining += 1;
-        return;
-      }
-
-      planned += dayPlanned;
-      worked += dayWorked;
-      if (isComplete) daysWorked += 1;
-      else incomplete += 1;
-      extras += Math.max(dayWorked - dayPlanned, 0);
-      missing += Math.max(dayPlanned - dayWorked, 0);
-    });
-
-    return {
-      range,
-      worked,
-      planned,
-      balance: worked - planned,
-      extras,
-      missing,
-      daysWorked,
-      daysRemaining,
-      incomplete,
-      folgas,
-      feriados,
-      totalDays: scoped.length,
-    };
-  }
-
-  function describeBalance(balance) {
-    if (balance > 0) return `Você está com saldo positivo de ${Calc.minutesToDisplay(balance)}.`;
-    if (balance < 0) return `Você precisa trabalhar mais ${Calc.minutesToDisplay(Math.abs(balance))} para ficar em dia.`;
-    return 'Sua jornada está em dia.';
-  }
-
-  return { getWeekRange, summarize, describeBalance };
+  window.PontoDashboard = {
+    renderDashboardSummary
+  };
 })();
-
-window.Dashboard = Dashboard;
