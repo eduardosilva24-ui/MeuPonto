@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>Meu Ponto</title>
+    <meta
+      name="description"
+      content="Registro de ponto pessoal com calendário real, integrações com Google Sheets e Apps Script."
+    />
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-icon">⏱️</span>
+          <span>Meu Ponto</span>
+        </div>
+        <div class="topbar-right">
+          <span id="topbar-user" class="topbar-user">Usuário</span>
+        </div>
+      </header>
+
+      <nav class="bottom-nav" aria-label="Navegação principal">
+        <button class="nav-item active" data-screen="today" type="button">
+          <span class="nav-icon">📅</span>
+          <span>Hoje</span>
+        </button>
+        <button class="nav-item" data-screen="calendar" type="button">
+          <span class="nav-icon">🗓️</span>
+          <span>Calendário</span>
+        </button>
+        <button class="nav-item" data-screen="history" type="button">
+          <span class="nav-icon">📊</span>
+          <span>Histórico</span>
+        </button>
+        <button class="nav-item" data-screen="closing" type="button">
+          <span class="nav-icon">🧾</span>
+          <span>Fechamento</span>
+        </button>
+        <button class="nav-item" data-screen="settings" type="button">
+          <span class="nav-icon">⚙️</span>
+          <span>Ajustes</span>
+        </button>
+      </nav>
+
+      <main class="main-content">
+        <section id="screen-today" class="screen active">
+          <div class="today-header">
+            <div id="today-date" class="today-date">Carregando...</div>
+            <div id="today-meta" class="today-meta">Aguarde...</div>
+            <span id="today-status-badge" class="status-badge badge-pending">Carregando</span>
+          </div>
+
+          <div class="card">
+            <div class="punch-wrap">
+              <button id="punch-btn" class="punch-btn btn-entrada" type="button">
+                <span class="btn-icon">⏰</span>
+                <span>REGISTRAR</span>
+              </button>
+            </div>
+
+            <div id="feriado-trabalhar-row" class="hidden mt-12">
+              <button id="feriado-trabalhar-btn" class="btn btn-primary btn-full" type="button">
+                Marcar como dia trabalhado
+              </button>
+            </div>
+
+            <div id="record-list" class="record-list mt-16"></div>
+          </div>
+
+          <div class="metrics-grid mt-16">
+            <div class="metric-card">
+              <div class="metric-label">Previsto</div>
+              <div id="metric-previsto" class="metric-value">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Trabalhado</div>
+              <div id="metric-trabalhado" class="metric-value">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Saldo</div>
+              <div id="metric-saldo" class="metric-value">—</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Status</div>
+              <div id="metric-status" class="metric-value">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-calendar" class="screen">
+          <div class="card">
+            <div class="cal-nav">
+              <button id="cal-prev-btn" class="cal-nav-btn" type="button" aria-label="Mês anterior">‹</button>
+              <div id="cal-title" class="cal-title">Calendário</div>
+              <button id="cal-next-btn" class="cal-nav-btn" type="button" aria-label="Próximo mês">›</button>
+            </div>
+            <div class="flex justify-between items-center mt-12 mb-12">
+              <button id="cal-nav-today-btn" class="btn btn-sm" type="button">Hoje</button>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-legend mt-16">
+              <div class="cal-legend-item"><span class="cal-dot complete"></span>Completo</div>
+              <div class="cal-legend-item"><span class="cal-dot pending"></span>Em andamento</div>
+              <div class="cal-legend-item"><span class="cal-dot danger"></span>Incompleto</div>
+              <div class="cal-legend-item"><span class="cal-dot feriado"></span>Feriado</div>
+              <div class="cal-legend-item"><span class="cal-dot off"></span>Folga</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-history" class="screen">
+          <div class="card">
+            <div class="hist-nav">
+              <button id="hist-prev-btn" class="cal-nav-btn" type="button" aria-label="Mês anterior">‹</button>
+              <div id="hist-title" class="cal-title">Histórico</div>
+              <button id="hist-next-btn" class="cal-nav-btn" type="button" aria-label="Próximo mês">›</button>
+            </div>
+            <div class="hist-table-wrap">
+              <table class="hist-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Entrada</th>
+                    <th>Café</th>
+                    <th>Volta</th>
+                    <th>Saída</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Ver</th>
+                  </tr>
+                </thead>
+                <tbody id="hist-tbody"></tbody>
+              </table>
+            </div>
+            <div class="mt-16">
+              <button id="print-btn-hist" class="btn btn-primary" type="button">Imprimir folha</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-closing" class="screen">
+          <div class="card">
+            <div class="hist-nav">
+              <button id="closing-prev-btn" class="cal-nav-btn" type="button" aria-label="Mês anterior">‹</button>
+              <div id="closing-title" class="cal-title">Fechamento</div>
+              <button id="closing-next-btn" class="cal-nav-btn" type="button" aria-label="Próximo mês">›</button>
+            </div>
+
+            <div class="closing-hero">
+              <div class="closing-stat">
+                <div id="closing-previstas" class="closing-stat-value">—</div>
+                <div class="closing-stat-label">Previstas</div>
+              </div>
+              <div class="closing-stat">
+                <div id="closing-trabalhadas" class="closing-stat-value">—</div>
+                <div class="closing-stat-label">Trabalhadas</div>
+              </div>
+              <div id="closing-saldo-card" class="closing-stat saldo-positive">
+                <div id="closing-saldo" class="closing-stat-value">—</div>
+                <div class="closing-stat-label">Saldo</div>
+              </div>
+              <div class="closing-stat">
+                <div id="closing-dias-trabalhados" class="closing-stat-value">0</div>
+                <div class="closing-stat-label">Dias úteis</div>
+              </div>
+            </div>
+
+            <div class="closing-details">
+              <div class="closing-row">
+                <span class="closing-row-label">Dias incompletos</span>
+                <span id="closing-dias-incompletos" class="closing-row-value">0</span>
+              </div>
+              <div class="closing-row">
+                <span class="closing-row-label">Dias de folga</span>
+                <span id="closing-dias-folga" class="closing-row-value">0</span>
+              </div>
+              <div class="closing-row">
+                <span class="closing-row-label">Dias de feriado</span>
+                <span id="closing-dias-feriado" class="closing-row-value">0</span>
+              </div>
+              <div class="closing-row">
+                <span class="closing-row-label">Total do mês</span>
+                <span id="closing-dias-mes" class="closing-row-value">—</span>
+              </div>
+            </div>
+
+            <div class="mt-16">
+              <button id="print-btn-closing" class="btn btn-primary" type="button">Imprimir fechamento</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-settings" class="screen">
+          <div class="card">
+            <div class="settings-tabs">
+              <button class="settings-tab active" type="button" data-tab="profile">Perfil</button>
+              <button class="settings-tab" type="button" data-tab="schedule">Jornada</button>
+              <button class="settings-tab" type="button" data-tab="holidays">Feriados</button>
+            </div>
+
+            <div id="settings-profile" class="settings-panel active">
+              <div class="field-group">
+                <div>
+                  <label class="field-label" for="cfg-nome">Nome</label>
+                  <input id="cfg-nome" class="field-input" type="text" placeholder="Seu nome" />
+                </div>
+                <div>
+                  <label class="field-label" for="cfg-empresa">Empresa</label>
+                  <input id="cfg-empresa" class="field-input" type="text" placeholder="Empresa" />
+                </div>
+                <div>
+                  <label class="field-label" for="cfg-cargo">Cargo</label>
+                  <input id="cfg-cargo" class="field-input" type="text" placeholder="Cargo" />
+                </div>
+                <button id="save-profile-btn" class="btn btn-primary" type="button">Salvar perfil</button>
+              </div>
+            </div>
+
+            <div id="settings-schedule" class="settings-panel">
+              <div class="schedule-table-wrap">
+                <table class="schedule-table">
+                  <thead>
+                    <tr>
+                      <th>Dia</th>
+                      <th>Trabalha</th>
+                      <th>Entrada</th>
+                      <th>Saída café</th>
+                      <th>Volta</th>
+                      <th>Saída</th>
+                    </tr>
+                  </thead>
+                  <tbody id="schedule-tbody"></tbody>
+                </table>
+              </div>
+              <div class="mt-16">
+                <button id="save-schedule-btn" class="btn btn-primary" type="button">Salvar jornada</button>
+              </div>
+            </div>
+
+            <div id="settings-holidays" class="settings-panel">
+              <div id="holiday-list" class="holiday-list"></div>
+
+              <div class="add-holiday-form">
+                <h4>Adicionar feriado</h4>
+                <div class="field-group mt-12">
+                  <div>
+                    <label class="field-label" for="holiday-date">Data</label>
+                    <input id="holiday-date" class="field-input" type="date" />
+                  </div>
+                  <div>
+                    <label class="field-label" for="holiday-nome">Nome</label>
+                    <input id="holiday-nome" class="field-input" type="text" placeholder="Ex.: Aniversário" />
+                  </div>
+                  <label class="toggle-wrap">
+                    <span class="field-label">Trabalha neste dia</span>
+                    <input id="holiday-trabalha" type="checkbox" />
+                  </label>
+                  <button id="save-holiday-btn" class="btn btn-primary" type="button">Salvar feriado</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="loader" class="hidden" aria-live="polite">
+      <div class="spinner"></div>
+      <div id="loader-text" class="loader-text">Carregando...</div>
+    </div>
+
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="modal-edit" class="modal-overlay" aria-hidden="true">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="edit-field-label" class="modal-title">Editar registro</h3>
+          <button class="modal-close" type="button" data-close-modal="modal-edit">×</button>
+        </div>
+        <input id="edit-datekey" type="hidden" />
+        <input id="edit-field" type="hidden" />
+        <div class="field-group">
+          <div>
+            <label class="field-label" for="edit-value">Hora</label>
+            <input id="edit-value" class="field-input" type="time" />
+          </div>
+          <div>
+            <label class="field-label" for="edit-motivo">Motivo</label>
+            <input id="edit-motivo" class="field-input" type="text" placeholder="Correção manual" />
+          </div>
+          <button id="edit-save-btn" class="btn btn-primary" type="button">Salvar correção</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-day" class="modal-overlay" aria-hidden="true">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="day-modal-date" class="modal-title">Detalhes do dia</h3>
+          <button class="modal-close" type="button" data-close-modal="modal-day">×</button>
+        </div>
+        <div id="day-modal-status" class="status-badge badge-pending mb-12">status</div>
+        <div id="day-modal-records" class="record-list"></div>
+        <div class="metrics-grid mt-16">
+          <div class="metric-card">
+            <div class="metric-label">Horas trabalhadas</div>
+            <div id="day-modal-worked" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Previstas</div>
+            <div id="day-modal-planned" class="metric-value">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Saldo</div>
+            <div id="day-modal-saldo" class="metric-value">—</div>
+          </div>
+        </div>
+        <div id="day-modal-edit-btns" class="mt-16"></div>
+      </div>
+    </div>
+
+    <div id="print-view"></div>
+
+    <script>
+      window.MEU_PONTO_API_URL = 'https://script.google.com/macros/s/AKfycbw0BiP9Ymq9NMLkQnmXOd-rnTIlmmuWI6-ex3Qdt-eL1hBUCo4G9cfiKUL96A_oEwFVVA/exec';
+    </script>
+    <script src="./js/api.js"></script>
+    <script src="./js/calculations.js"></script>
+    <script src="./js/print.js"></script>
+    <script src="./js/app.js"></script>
+  </body>
+</html>

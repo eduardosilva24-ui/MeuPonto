@@ -1,0 +1,132 @@
+// ─── Meu Ponto — api.js ──────────────────────────────────────────────────────
+// Camada de comunicação com o Google Apps Script via GET/CORS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API_URL = (typeof window !== 'undefined' && window.MEU_PONTO_API_URL)
+  ? window.MEU_PONTO_API_URL
+  : 'https://script.google.com/macros/s/SEU_WEB_APP_ID/exec';
+
+/**
+ * Faz uma chamada GET para o Apps Script.
+ * Todos os parâmetros são enviados via query string.
+ * Objetos/arrays complexos são serializados como JSON no parâmetro `p`.
+ */
+async function apiCall(action, params = {}) {
+  const qs = new URLSearchParams({ action });
+
+  // Parâmetros simples (string/number/boolean) vão direto
+  // Parâmetros complexos (objeto) vão no parâmetro `p`
+  const simple  = {};
+  const complex = {};
+
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== null && val !== undefined && typeof val === 'object') {
+      complex[key] = val;
+    } else if (val !== null && val !== undefined) {
+      simple[key] = String(val);
+    }
+  }
+
+  // Anexar parâmetros simples diretamente
+  for (const [key, val] of Object.entries(simple)) {
+    qs.set(key, val);
+  }
+
+  // Parâmetros complexos como JSON no `p`
+  if (Object.keys(complex).length > 0) {
+    qs.set('p', JSON.stringify(complex));
+  }
+
+  const url = `${API_URL}?${qs.toString()}`;
+
+  try {
+    const res = await fetch(url, {
+      method:   'GET',
+      redirect: 'follow',
+      cache:    'no-store',
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const text = await res.text();
+
+    // Tenta parsear como JSON (o Apps Script pode retornar HTML em erros)
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error('[API] Resposta não-JSON:', text.slice(0, 300));
+      throw new Error('Resposta inválida do servidor. Verifique se o Web App está publicado corretamente.');
+    }
+
+    if (!data.ok) {
+      throw new Error(data.error || 'Erro desconhecido no servidor.');
+    }
+
+    return data.result;
+
+  } catch (err) {
+    console.error(`[API] Erro na ação "${action}":`, err);
+    throw err;
+  }
+}
+
+// ─── Endpoints específicos ────────────────────────────────────────────────────
+
+const Api = {
+
+  /** Carrega dados iniciais: config, jornada, feriados, estado de hoje */
+  async getShell() {
+    return apiCall('getShell');
+  },
+
+  /** Carrega dados completos de um mês (calendário + resumo) */
+  async getCalendar(year, month) {
+    return apiCall('getCalendar', { year, month });
+  },
+
+  /** Registra um ponto (entrada/saidaCafe/voltaCafe/saida) */
+  async registerPunch(type) {
+    return apiCall('registerPunch', { type });
+  },
+
+  /** Edita um campo de um registro existente */
+  async editRecord(dateKey, field, value, motivo = 'Correção manual') {
+    return apiCall('editRecord', { dateKey, field, value, motivo });
+  },
+
+  /** Salva configurações do perfil */
+  async saveConfig(config) {
+    return apiCall('saveConfig', config);
+  },
+
+  /** Salva jornada semanal completa */
+  async saveSchedule(schedule) {
+    // schedule é um objeto com keys = nomes dos dias
+    return apiCall('saveSchedule', schedule);
+  },
+
+  /** Adiciona ou atualiza um feriado */
+  async saveHoliday(dateKey, nome, trabalha = false) {
+    return apiCall('saveHoliday', { dateKey, nome, trabalha });
+  },
+
+  /** Remove um feriado */
+  async deleteHoliday(dateKey) {
+    return apiCall('deleteHoliday', { dateKey });
+  },
+
+  /** Busca resumo mensal */
+  async getMonthlySummary(year, month) {
+    return apiCall('getMonthlySummary', { year, month });
+  },
+
+  /** Busca estado de um dia específico */
+  async getDayState(dateKey) {
+    return apiCall('getDayState', { dateKey });
+  },
+};
+
+window.Api = Api;

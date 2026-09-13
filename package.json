@@ -1,0 +1,10 @@
+{
+  "name": "meu-ponto",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Frontend static: no build step required'",
+    "start": "npx http-server . -p 3000",
+    "test": "node test/date-utils.test.js"
+  }
+}
