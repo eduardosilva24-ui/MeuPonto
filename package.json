@@ -5,6 +5,6 @@
   "scripts": {
     "build": "echo 'Frontend static: no build step required'",
     "start": "npx http-server . -p 3000",
-    "test": "node test/date-utils.test.js"
+    "test": "node test/date-utils.test.js && node test/ponto-logic.test.js"
   }
 }

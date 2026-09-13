@@ -1,12 +1,12 @@
 const { formatDateKey, getWeekdayName, getLastDayOfMonth } = require('./dateUtils');
 
 function getNextActionForDay(dayState) {
-  if (!dayState || !dayState.available) {
-    return 'folga';
+  if (dayState && dayState.feriado && !dayState.trabalhaNoFeriado) {
+    return 'feriado';
   }
 
-  if (dayState.feriado && !dayState.trabalhaNoFeriado) {
-    return 'feriado';
+  if (!dayState || !dayState.available) {
+    return 'folga';
   }
 
   const { registros } = dayState;

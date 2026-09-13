@@ -27,15 +27,21 @@ function getDefaultConfig() {
 function createDataContext() {
   var points = getSheet('PONTOS').getDataRange().getValues();
   var pointsByDate = {};
+  var pointRowIndexByDate = {};
   for (var i = 1; i < points.length; i += 1) {
     var row = points[i];
-    if (row[1]) pointsByDate[String(row[1]).trim()] = row;
+    if (row[1]) {
+      var dateKey = String(row[1]).trim();
+      pointsByDate[dateKey] = row;
+      pointRowIndexByDate[dateKey] = i + 1;
+    }
   }
   return {
     config: readConfig(),
     schedule: readSchedule(),
     holidays: readHolidays(),
-    pointsByDate: pointsByDate
+    pointsByDate: pointsByDate,
+    pointRowIndexByDate: pointRowIndexByDate
   };
 }
 
@@ -238,7 +244,10 @@ function validatePunch(dateKey, type, value) {
   if (!isValidDateKey(dateKey) || !isValidTime(value)) {
     return { valid: false, message: 'Data ou horário inválido.' };
   }
-  var day          = buildDailyState(parseDateKey(dateKey));
+  return validatePunchAgainstDay(buildDailyState(parseDateKey(dateKey)), type, value);
+}
+
+function validatePunchAgainstDay(day, type, value) {
   var entry        = day.entradas.entrada;
   var coffeeExit   = day.entradas.saidaCafe;
   var coffeeReturn = day.entradas.voltaCafe;
@@ -309,10 +318,21 @@ function registerPunch(type) {
     var date    = new Date();
     var dateKey = toDateKey(date);
     var time    = Utilities.formatDate(date, TZ, 'HH:mm');
-    var validation = validatePunch(dateKey, type, time);
+    if (!isValidTime(time)) throw new Error('Horário inválido.');
+
+    var context = createDataContext();
+    var day = buildDailyState(parseDateKey(dateKey), context);
+    var validation = validatePunchAgainstDay(day, type, time);
     if (!validation.valid) throw new Error(validation.message);
 
-    var existingRow = ensureDailyRow(dateKey);
+    var pointsSheet = getSheet('PONTOS');
+    var existingRow = context.pointsByDate[dateKey];
+    var rowIndex = context.pointRowIndexByDate[dateKey];
+    var isNewRow = !existingRow;
+    if (!existingRow) {
+      existingRow = buildDailyRowData(dateKey, date, day.schedule);
+    }
+
     var values = {
       ID:       existingRow[0] || Utilities.formatDate(date, TZ, 'yyyyMMddHHmmss'),
       Data:     dateKey,
@@ -330,8 +350,17 @@ function registerPunch(type) {
     var hasAllPunches = !!(values.Entrada && values.SaidaCafe && values.VoltaCafe && values.Saida);
     values.Status = hasAllPunches ? 'Completo' : 'Pendente';
     values.TotalTrabalhado = minutesToText(worked);
-    updateDailyRow(dateKey, values);
-    return buildDailyState(date);
+    var updatedRow;
+    if (isNewRow) {
+      updatedRow = mergeDailyRow(existingRow, values);
+      pointsSheet.appendRow(updatedRow);
+      rowIndex = pointsSheet.getLastRow();
+    } else {
+      updatedRow = updateDailyRowAt(rowIndex, values, existingRow);
+    }
+    context.pointsByDate[dateKey] = updatedRow;
+    context.pointRowIndexByDate[dateKey] = rowIndex;
+    return buildDailyState(parseDateKey(dateKey), context);
   } finally {
     lock.releaseLock();
   }
@@ -356,13 +385,16 @@ function editRecord(dateKey, field, newValue, motivo) {
     throw new Error('Campo inválido: ' + field + '. Use Entrada, SaidaCafe, VoltaCafe, Saida ou Observacao.');
   }
 
-  var row = getDailyPointRow(dateKey);
+  var context = createDataContext();
+  var row = context.pointsByDate[dateKey];
+  var rowIndex = context.pointRowIndexByDate[dateKey];
+  var isNewRow = !row;
   if (!row) {
-    var day = buildDailyState(parseDateKey(dateKey));
+    var day = buildDailyState(parseDateKey(dateKey), context);
     if (!day.available) {
       throw new Error('Não há jornada prevista para esta data. Cadastre trabalho no feriado ou ajuste a jornada antes de inserir marcações.');
     }
-    row = ensureDailyRow(dateKey);
+    row = buildDailyRowData(dateKey, new Date(), day.schedule);
   }
   var oldValue = row[fieldIndex];
   var values   = {};
@@ -383,10 +415,20 @@ function editRecord(dateKey, field, newValue, motivo) {
   values.TotalTrabalhado = minutesToText(worked);
   values.Status          = hasAll ? 'Completo' : 'Pendente';
 
-  updateDailyRow(dateKey, values);
+  var updatedRow;
+  if (isNewRow) {
+    updatedRow = mergeDailyRow(row, values);
+    var pointsSheet = getSheet('PONTOS');
+    pointsSheet.appendRow(updatedRow);
+    rowIndex = pointsSheet.getLastRow();
+  } else {
+    updatedRow = updateDailyRowAt(rowIndex, values, row);
+  }
+  context.pointsByDate[dateKey] = updatedRow;
+  context.pointRowIndexByDate[dateKey] = rowIndex;
   createAuditLog(dateKey, field, oldValue, newValue, motivo || 'Correção manual');
 
-  return buildDailyState(parseDateKey(dateKey));
+  return buildDailyState(parseDateKey(dateKey), context);
 }
 
 // ─── Resumo mensal ────────────────────────────────────────────────────────────

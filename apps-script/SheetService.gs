@@ -291,17 +291,9 @@ function getDailyPointRow(dateKey) {
   return null;
 }
 
-function ensureDailyRow(dateKey) {
-  var sheet = getSheet('PONTOS');
-  var existing = getDailyPointRow(dateKey);
-  if (existing) {
-    return existing;
-  }
-
-  var now = new Date();
-  var schedule = getScheduleForDate(parseDateKey(dateKey));
+function buildDailyRowData(dateKey, now, schedule) {
   var nowText = Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm:ss');
-  var rowData = [
+  return [
     Utilities.formatDate(now, TZ, 'yyyyMMddHHmmss'),
     dateKey,
     '', '', '', '',
@@ -314,9 +306,47 @@ function ensureDailyRow(dateKey) {
     'web',
     nowText
   ];
+}
+
+function ensureDailyRow(dateKey) {
+  var sheet = getSheet('PONTOS');
+  var existing = getDailyPointRow(dateKey);
+  if (existing) {
+    return existing;
+  }
+
+  var now = new Date();
+  var schedule = getScheduleForDate(parseDateKey(dateKey));
+  var rowData = buildDailyRowData(dateKey, now, schedule);
 
   sheet.appendRow(rowData);
   return rowData;
+}
+
+function mergeDailyRow(row, valuesMap) {
+  var updated = row.slice();
+  while (updated.length < 14) updated.push('');
+
+  if (valuesMap.ID             !== undefined) updated[0] = valuesMap.ID;
+  if (valuesMap.Data           !== undefined) updated[1] = valuesMap.Data;
+  if (valuesMap.Entrada        !== undefined) updated[2] = valuesMap.Entrada;
+  if (valuesMap.SaidaCafe      !== undefined) updated[3] = valuesMap.SaidaCafe;
+  if (valuesMap.VoltaCafe      !== undefined) updated[4] = valuesMap.VoltaCafe;
+  if (valuesMap.Saida          !== undefined) updated[5] = valuesMap.Saida;
+  if (valuesMap.Status         !== undefined) updated[6] = valuesMap.Status;
+  if (valuesMap.TotalTrabalhado !== undefined) updated[7] = valuesMap.TotalTrabalhado;
+  if (valuesMap.Observacao     !== undefined) updated[8] = valuesMap.Observacao;
+  updated[9] = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+
+  return updated;
+}
+
+function updateDailyRowAt(rowIndex, valuesMap, baseRow) {
+  var sheet = getSheet('PONTOS');
+  var row = baseRow || sheet.getRange(rowIndex, 1, 1, 14).getValues()[0];
+  var updated = mergeDailyRow(row, valuesMap);
+  sheet.getRange(rowIndex, 1, 1, 14).setValues([updated]);
+  return updated;
 }
 
 function updateDailyRow(dateKey, valuesMap) {
@@ -338,18 +368,7 @@ function updateDailyRow(dateKey, valuesMap) {
 
   var range = sheet.getRange(rowIndex, 1, 1, 14);
   var row = range.getValues()[0];
-  var updated = row.slice();
-
-  if (valuesMap.ID             !== undefined) updated[0] = valuesMap.ID;
-  if (valuesMap.Data           !== undefined) updated[1] = valuesMap.Data;
-  if (valuesMap.Entrada        !== undefined) updated[2] = valuesMap.Entrada;
-  if (valuesMap.SaidaCafe      !== undefined) updated[3] = valuesMap.SaidaCafe;
-  if (valuesMap.VoltaCafe      !== undefined) updated[4] = valuesMap.VoltaCafe;
-  if (valuesMap.Saida          !== undefined) updated[5] = valuesMap.Saida;
-  if (valuesMap.Status         !== undefined) updated[6] = valuesMap.Status;
-  if (valuesMap.TotalTrabalhado !== undefined) updated[7] = valuesMap.TotalTrabalhado;
-  if (valuesMap.Observacao     !== undefined) updated[8] = valuesMap.Observacao;
-  updated[9] = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
+  var updated = mergeDailyRow(row, valuesMap);
 
   range.setValues([updated]);
   return updated;

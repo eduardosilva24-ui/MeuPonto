@@ -33,7 +33,7 @@ function getMonthName(monthIndex) {
 }
 
 function getLastDayOfMonth(year, monthIndex) {
-  const normalizedMonth = monthIndex >= 1 && monthIndex <= 12 ? monthIndex - 1 : monthIndex;
+  const normalizedMonth = (monthIndex >= 0 && monthIndex <= 11) ? monthIndex : monthIndex - 1;
   return new Date(year, normalizedMonth + 1, 0).getDate();
 }
 

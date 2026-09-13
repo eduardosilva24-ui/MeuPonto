@@ -15,14 +15,45 @@
   </head>
   <body>
     <div id="app">
+      <aside class="side-nav" aria-label="Navegação principal">
+        <div class="side-brand">
+          <span class="brand-icon">⏱️</span>
+          <span>Meu Ponto</span>
+        </div>
+        <div class="side-status">
+          <span id="sync-status-side" class="sync-status" role="status" aria-live="polite" data-sync-status>Conectando</span>
+          <span class="topbar-user" data-user-name>Usuário</span>
+        </div>
+        <button class="side-nav-item active" data-screen="today" type="button">
+          <span class="nav-icon">📅</span>
+          <span>Hoje</span>
+        </button>
+        <button class="side-nav-item" data-screen="calendar" type="button">
+          <span class="nav-icon">🗓️</span>
+          <span>Calendário</span>
+        </button>
+        <button class="side-nav-item" data-screen="history" type="button">
+          <span class="nav-icon">📊</span>
+          <span>Histórico</span>
+        </button>
+        <button class="side-nav-item" data-screen="closing" type="button">
+          <span class="nav-icon">◔</span>
+          <span>Saldo</span>
+        </button>
+        <button class="side-nav-item" data-screen="settings" type="button">
+          <span class="nav-icon">⚙️</span>
+          <span>Ajustes</span>
+        </button>
+      </aside>
+
       <header class="topbar">
         <div class="brand">
           <span class="brand-icon">⏱️</span>
           <span>Meu Ponto</span>
         </div>
         <div class="topbar-right">
-          <span id="sync-status" class="sync-status" role="status" aria-live="polite">Conectando</span>
-          <span id="topbar-user" class="topbar-user">Usuário</span>
+          <span id="sync-status" class="sync-status" role="status" aria-live="polite" data-sync-status>Conectando</span>
+          <span id="topbar-user" class="topbar-user" data-user-name>Usuário</span>
         </div>
       </header>
 

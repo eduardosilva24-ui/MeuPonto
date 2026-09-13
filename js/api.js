@@ -16,6 +16,14 @@ function resolveApiUrl() {
 }
 
 const API_URL = resolveApiUrl();
+const ACTION_TIMEOUT_MS = {
+  registerPunch: 60000,
+  editRecord: 60000,
+  saveHoliday: 45000,
+  deleteHoliday: 45000,
+  saveSchedule: 45000,
+  saveConfig: 45000,
+};
 
 /**
  * Faz uma chamada GET para o Apps Script.
@@ -35,7 +43,7 @@ async function apiCall(action, params = {}) {
       window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'syncing', action } }));
     }
     const controller = new AbortController();
-    timeout = setTimeout(() => controller.abort(), 20000);
+    timeout = setTimeout(() => controller.abort(), ACTION_TIMEOUT_MS[action] || 30000);
     const res = await fetch(url, {
       method:   'GET',
       redirect: 'follow',

@@ -22,6 +22,8 @@ const App = (() => {
     activeScreen: 'today',
     settingsTab:  'profile',
     loading:      false,
+    punchInFlight: false,
+    todayUpdatedAt: 0,
   };
 
   // ─── Utilitários de UI ───────────────────────────────────────────────────────
@@ -59,11 +61,18 @@ const App = (() => {
   }
 
   function setSyncState(status) {
-    const el = document.getElementById('sync-status');
-    if (!el) return;
     const labels = { syncing: 'Sincronizando', synced: 'Sincronizado', offline: 'Sem conexão', error: 'Erro ao sincronizar' };
-    el.className = `sync-status ${status}`;
-    el.textContent = labels[status] || 'Conectando';
+    document.querySelectorAll('[data-sync-status]').forEach((el) => {
+      el.className = `sync-status ${status}`;
+      el.textContent = labels[status] || 'Conectando';
+    });
+  }
+
+  function setUserName(name) {
+    const label = name || 'Usuário';
+    document.querySelectorAll('[data-user-name]').forEach((el) => {
+      el.textContent = label;
+    });
   }
 
   function updateClock() {
@@ -93,6 +102,15 @@ const App = (() => {
     });
     const el = document.getElementById(`screen-${screen}`);
     if (el) el.classList.add('active');
+
+    if (['calendar', 'history', 'closing'].includes(screen) && !state.monthData) {
+      showLoader('Carregando dados do mês...');
+      loadMonthData(state.currentYear, state.currentMonth).then(() => {
+        hideLoader();
+        refreshActiveScreen();
+      });
+      return;
+    }
 
     if (screen === 'today')    renderToday();
     if (screen === 'calendar') renderCalendarScreen();
@@ -234,7 +252,8 @@ const App = (() => {
 
   async function handlePunch(action) {
     const type = Calc.actionToType(action);
-    if (!type) return;
+    if (!type || state.punchInFlight) return;
+    state.punchInFlight = true;
 
     const btn = document.getElementById('punch-btn');
     btn.disabled   = true;
@@ -243,6 +262,7 @@ const App = (() => {
     try {
       const updatedDay = await Api.registerPunch(type);
       state.today = updatedDay;
+      state.todayUpdatedAt = Date.now();
 
       // Atualizar no monthData também
       if (state.monthData && state.monthData.calendar) {
@@ -255,8 +275,34 @@ const App = (() => {
       showConfirmation(type, updatedDay);
       toast(`✅ ${actionLabels[type] || 'Ponto'} registrado!`, 'success');
     } catch (err) {
-      renderPunchButton(state.today);
-      toast(`❌ ${err.message}`, 'error', 5000);
+      const recovered = await recoverPunchAfterError(type);
+      if (!recovered) {
+        renderPunchButton(state.today);
+        toast(`❌ ${err.message}`, 'error', 5000);
+      }
+    } finally {
+      state.punchInFlight = false;
+    }
+  }
+
+  async function recoverPunchAfterError(type) {
+    try {
+      const latestDay = await Api.getDayState(Calc.getTodayKey());
+      const entries = latestDay?.entradas || {};
+      if (!entries[type]) return false;
+      state.today = latestDay;
+      state.todayUpdatedAt = Date.now();
+      if (state.monthData?.calendar) {
+        const idx = state.monthData.calendar.findIndex(d => d && d.dateKey === latestDay.dateKey);
+        if (idx !== -1) state.monthData.calendar[idx] = latestDay;
+      }
+      updateCachedDay(latestDay);
+      renderToday();
+      showConfirmation(type, latestDay);
+      toast('Registro confirmado após sincronização.', 'success');
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -310,6 +356,7 @@ const App = (() => {
       // Atualizar estado
       if (updatedDay.dateKey === state.today?.dateKey) {
         state.today = updatedDay;
+        state.todayUpdatedAt = Date.now();
       }
       if (state.monthData?.calendar) {
         const idx = state.monthData.calendar.findIndex(d => d && d.dateKey === updatedDay.dateKey);
@@ -646,7 +693,7 @@ const App = (() => {
       state.config = await Api.saveConfig(config);
       Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
       hideLoader();
-      document.getElementById('topbar-user').textContent = state.config.nome || '';
+      setUserName(state.config.nome);
       toast('✅ Perfil salvo com sucesso!', 'success');
     } catch (err) {
       hideLoader();
@@ -764,6 +811,7 @@ const App = (() => {
     const current = Calc.getCurrentMonth();
     if (dateKey === Calc.getTodayKey() && (state.currentYear !== current.year || state.currentMonth !== current.month)) {
       state.today = await Api.getDayState(dateKey);
+      state.todayUpdatedAt = Date.now();
       updateCachedDay(state.today);
     }
     Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
@@ -790,13 +838,23 @@ const App = (() => {
   }
 
   async function loadMonthData(year, month) {
+    const requestStartedAt = Date.now();
     try {
       const data = await fetchMonth(year, month);
       state.monthData    = data;
       state.currentYear  = year;
       state.currentMonth = month;
       const now = Calc.getCurrentMonth();
-      if (year === now.year && month === now.month) state.today = data.today;
+      if (year === now.year && month === now.month) {
+        if (state.today && state.todayUpdatedAt > requestStartedAt) {
+          data.today = state.today;
+          const index = (data.calendar || []).findIndex((day) => day?.dateKey === state.today.dateKey);
+          if (index !== -1) data.calendar[index] = state.today;
+        } else {
+          state.today = data.today;
+          state.todayUpdatedAt = Date.now();
+        }
+      }
       return data;
     } catch (err) {
       toast(`❌ Erro ao carregar mês: ${err.message}`, 'error', 6000);
@@ -838,15 +896,18 @@ const App = (() => {
       state.schedule = shell.schedule || {};
       state.holidays = shell.holidays || {};
       state.today    = shell.today    || null;
+      state.todayUpdatedAt = Date.now();
       Storage.setShell(shell);
 
-      // Exibir nome do usuário na topbar
-      if (state.config.nome) {
-        document.getElementById('topbar-user').textContent = state.config.nome;
-      }
+      setUserName(state.config.nome);
 
-      // Carregar mês atual
-      await loadMonthData(state.currentYear, state.currentMonth);
+      hideLoader();
+      navigate('today');
+      loadMonthData(state.currentYear, state.currentMonth).then(() => {
+        if (state.activeScreen !== 'today') refreshActiveScreen();
+      });
+      startClockUpdate();
+      return;
 
     } catch (err) {
       const cachedShell = Storage.getShell();
@@ -862,12 +923,16 @@ const App = (() => {
       state.schedule = cachedShell.schedule || {};
       state.holidays = cachedShell.holidays || {};
       state.today = cachedShell.today || null;
-      await loadMonthData(state.currentYear, state.currentMonth);
+      state.todayUpdatedAt = Date.now();
+      setUserName(state.config.nome);
       toast('Sem conexão. Exibindo dados sincronizados anteriormente.', 'info', 5000);
     }
 
     hideLoader();
     navigate('today');
+    loadMonthData(state.currentYear, state.currentMonth).then(() => {
+      if (state.activeScreen !== 'today') refreshActiveScreen();
+    });
     startClockUpdate();
   }
 
@@ -990,6 +1055,7 @@ const App = (() => {
         invalidateMonthCache(year, month);
         const updatedDay = await Api.getDayState(state.today.dateKey);
         state.today = updatedDay;
+        state.todayUpdatedAt = Date.now();
         updateCachedDay(updatedDay);
         Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
         hideLoader();
