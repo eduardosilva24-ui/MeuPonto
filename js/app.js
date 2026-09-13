@@ -6,16 +6,19 @@ const App = (() => {
 
   // ─── Estado global ──────────────────────────────────────────────────────────
 
+  const initialMonth = Calc.getCurrentMonth();
   const state = {
     config:      {},
     schedule:    {},
     holidays:    {},
     today:       null,
     monthData:   null,
-    currentYear:  new Date().getFullYear(),
-    currentMonth: new Date().getMonth(),   // 0-based
-    histYear:     new Date().getFullYear(),
-    histMonth:    new Date().getMonth(),
+    currentYear:  initialMonth.year,
+    currentMonth: initialMonth.month,   // 0-based
+    monthCache:   new Map(),
+    dashboardPeriod: 'month',
+    customRange:  null,
+    eventsReady:  false,
     activeScreen: 'today',
     settingsTab:  'profile',
     loading:      false,
@@ -49,6 +52,31 @@ const App = (() => {
     document.getElementById(id).classList.remove('open');
   }
 
+  function setSyncState(status) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    const labels = { syncing: 'Sincronizando', synced: 'Sincronizado', offline: 'Sem conexão', error: 'Erro ao sincronizar' };
+    el.className = `sync-status ${status}`;
+    el.textContent = labels[status] || 'Conectando';
+  }
+
+  function updateClock() {
+    const time = Calc.getSaoPauloTime();
+    const clock = document.getElementById('today-clock');
+    if (clock) clock.textContent = time;
+    const buttonTime = document.querySelector('#punch-btn .btn-time');
+    if (buttonTime) buttonTime.textContent = time;
+  }
+
+  function showConfirmation(type, day) {
+    const entry = day?.entradas || {};
+    const values = { entrada: entry.entrada, saidaCafe: entry.saidaCafe, voltaCafe: entry.voltaCafe, saida: entry.saida };
+    const card = document.getElementById('punch-confirmation');
+    document.getElementById('confirmation-title').textContent = 'Ponto registrado';
+    document.getElementById('confirmation-detail').textContent = `${actionLabels[type]} • ${values[type] || Calc.getSaoPauloTime()} — registro salvo com sucesso.`;
+    card.classList.remove('hidden');
+  }
+
   // ─── Navegação ───────────────────────────────────────────────────────────────
 
   function navigate(screen) {
@@ -75,6 +103,11 @@ const App = (() => {
 
     // Data e cabeçalho
     document.getElementById('today-date').textContent = Calc.formatDateFull(today.dateKey, today.weekday);
+    updateClock();
+    const name = state.config?.nome?.trim();
+    const hour = Calc.getSaoPauloDateParts().hour;
+    const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+    document.getElementById('today-greeting').textContent = name ? `${greeting}, ${name}.` : `${greeting}.`;
     const jornada = today.schedule;
     const jornadaStr = jornada && jornada.trabalha && jornada.entrada && jornada.saida
       ? `Jornada prevista: ${jornada.entrada} → ${jornada.saida}`
@@ -101,13 +134,18 @@ const App = (() => {
     const feriadoRow = document.getElementById('feriado-trabalhar-row');
     if (today.holiday && !today.holiday.trabalha) {
       feriadoRow.classList.remove('hidden');
-      document.getElementById('feriado-nome').textContent = today.holiday.nome;
     } else {
       feriadoRow.classList.add('hidden');
     }
 
     // Registros do dia
     renderRecords(today);
+    const recordOrder = [
+      ['Saída', today.entradas?.saida], ['Volta do café', today.entradas?.voltaCafe],
+      ['Saída para café', today.entradas?.saidaCafe], ['Entrada', today.entradas?.entrada]
+    ];
+    const latest = recordOrder.find((record) => record[1]);
+    document.getElementById('today-last-record').textContent = latest ? `${latest[0]} • ${latest[1]}` : 'Nenhum registro ainda';
 
     // Botão principal
     renderPunchButton(today);
@@ -168,8 +206,7 @@ const App = (() => {
     };
 
     // Horário atual exibido
-    const now = new Date();
-    const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const timeStr = Calc.getSaoPauloTime();
 
     btn.innerHTML = `
       <span class="btn-icon">${icon[action] || '⏰'}</span>
@@ -186,10 +223,7 @@ const App = (() => {
       if (state.activeScreen === 'today' && state.today) {
         const isActionable = !['FOLGA','FERIADO','FINALIZADO'].includes(state.today.nextAction);
         if (isActionable) {
-          const now = new Date();
-          const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-          const timeEl = document.querySelector('#punch-btn .btn-time');
-          if (timeEl) timeEl.textContent = timeStr;
+          updateClock();
         }
       }
     }, 30000); // Atualiza a cada 30s
@@ -212,8 +246,10 @@ const App = (() => {
         const idx = state.monthData.calendar.findIndex(d => d && d.dateKey === updatedDay.dateKey);
         if (idx !== -1) state.monthData.calendar[idx] = updatedDay;
       }
+      updateCachedDay(updatedDay);
 
       renderToday();
+      showConfirmation(type, updatedDay);
       toast(`✅ ${actionLabels[type] || 'Ponto'} registrado!`, 'success');
     } catch (err) {
       renderPunchButton(state.today);
@@ -227,6 +263,18 @@ const App = (() => {
     voltaCafe:  'Volta do café',
     saida:      'Saída',
   };
+
+  function updateCachedDay(updatedDay) {
+    if (!updatedDay?.dateKey) return;
+    state.monthCache.forEach((data, key) => {
+      const index = (data.calendar || []).findIndex((day) => day?.dateKey === updatedDay.dateKey);
+      if (index === -1) return;
+      data.calendar[index] = updatedDay;
+      if (data.today?.dateKey === updatedDay.dateKey) data.today = updatedDay;
+      state.monthCache.set(key, data);
+      Storage.setMonth(data.year, data.monthIndex, data);
+    });
+  }
 
   // ─── Modal: Editar Registro ──────────────────────────────────────────────────
 
@@ -264,6 +312,7 @@ const App = (() => {
         const idx = state.monthData.calendar.findIndex(d => d && d.dateKey === updatedDay.dateKey);
         if (idx !== -1) state.monthData.calendar[idx] = updatedDay;
       }
+      updateCachedDay(updatedDay);
 
       closeModal('modal-edit');
       hideLoader();
@@ -363,20 +412,13 @@ const App = (() => {
       const day = calMap[dateKey];
       const dn  = parseInt(dateKey.split('-')[2], 10);
       const isToday = dateKey === todayKey;
-      let dot = 'off';
-      if (day) {
-        if (day.nextAction === 'FINALIZADO')       dot = 'complete';
-        else if (day.nextAction === 'FERIADO')     dot = 'feriado';
-        else if (day.nextAction === 'FOLGA')       dot = 'off';
-        else if (day.available && day.entradas?.entrada) dot = 'pending';
-        else if (day.available && dateKey < todayKey)    dot = 'danger';
-        else                                              dot = 'off';
-      }
+      const status = CalendarUI.getStatus(day, todayKey);
+      const dot = CalendarUI.dotClass(day, todayKey);
 
-      return `<div class="cal-cell${isToday ? ' today' : ''}" data-datekey="${dateKey}">
+      return `<button class="cal-cell${isToday ? ' today' : ''}" type="button" data-datekey="${dateKey}" aria-label="${Calc.formatDateKey(dateKey)}: ${status.label}">
         <span class="cal-day-num">${dn}</span>
         <span class="cal-dot ${dot}"></span>
-      </div>`;
+      </button>`;
     }).join('');
 
     grid.innerHTML = cells;
@@ -390,14 +432,17 @@ const App = (() => {
     });
   }
 
-  function changeCalendarMonth(offset) {
+  async function changeCalendarMonth(offset) {
     let m = state.currentMonth + offset;
     let y = state.currentYear;
     if (m < 0)  { m = 11; y--; }
     if (m > 11) { m = 0;  y++; }
     state.currentMonth = m;
     state.currentYear  = y;
-    loadMonthData(y, m).then(() => renderCalendarScreen());
+    await loadMonthData(y, m);
+    if (state.activeScreen === 'calendar') renderCalendarScreen();
+    if (state.activeScreen === 'history') renderHistory();
+    if (state.activeScreen === 'closing') renderClosing();
   }
 
   // ─── Tela: HISTÓRICO ─────────────────────────────────────────────────────────
@@ -443,27 +488,61 @@ const App = (() => {
 
   // ─── Tela: FECHAMENTO ────────────────────────────────────────────────────────
 
-  function renderClosing() {
-    const monthData = state.monthData;
-    if (!monthData) return;
-    const s = monthData.summary || {};
-    const y = state.currentYear;
-    const m = state.currentMonth;
+  async function renderClosing() {
+    const current = Calc.getCurrentMonth();
+    const period = state.dashboardPeriod;
+    let range;
+    let title;
 
-    document.getElementById('closing-title').textContent = `Fechamento — ${Calc.MONTH_NAMES[m]} ${y}`;
-    document.getElementById('closing-previstas').textContent    = s.horasPrevistas    || '—';
-    document.getElementById('closing-trabalhadas').textContent  = s.horasTrabalhadas  || '—';
+    if (period === 'today') {
+      const today = Calc.getTodayKey();
+      range = { start: today, end: today };
+      title = 'Hoje';
+    } else if (period === 'week') {
+      range = Dashboard.getWeekRange(Calc.getTodayKey());
+      title = 'Esta semana';
+    } else if (period === 'custom' && state.customRange) {
+      range = state.customRange;
+      title = `${Calc.formatDateKey(range.start)} — ${Calc.formatDateKey(range.end)}`;
+    } else {
+      const y = state.currentYear;
+      const m = state.currentMonth;
+      range = { start: `${y}-${String(m + 1).padStart(2, '0')}-01`, end: `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}` };
+      title = `${Calc.MONTH_NAMES[m]} ${y}`;
+    }
 
-    const saldoEl = document.getElementById('closing-saldo');
-    saldoEl.textContent = s.saldo || '—';
-    const saldoCard = document.getElementById('closing-saldo-card');
-    saldoCard.className = `closing-stat ${(s.saldoMinutes || 0) >= 0 ? 'saldo-positive' : 'saldo-negative'}`;
+    document.getElementById('closing-title').textContent = title;
+    document.querySelectorAll('.period-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.period === period));
+    document.getElementById('custom-period').classList.toggle('hidden', period !== 'custom');
 
-    document.getElementById('closing-dias-trabalhados').textContent = s.daysWorked    || '0';
-    document.getElementById('closing-dias-incompletos').textContent = s.daysIncomplete || '0';
-    document.getElementById('closing-dias-folga').textContent      = s.daysFolga      || '0';
-    document.getElementById('closing-dias-feriado').textContent    = s.daysFeriado    || '0';
-    document.getElementById('closing-dias-mes').textContent        = s.daysInMonth    || '—';
+    let days;
+    try {
+      days = await getDaysForRange(range.start, range.end);
+    } catch (error) {
+      toast(`Não foi possível carregar o período: ${error.message}`, 'error', 5000);
+      return;
+    }
+    const summary = Dashboard.summarize(days, range);
+    const balance = summary.balance;
+    const hero = document.getElementById('saldo-hero');
+    hero.className = `saldo-hero ${balance > 0 ? 'saldo-positive' : balance < 0 ? 'saldo-negative' : 'saldo-neutral'}`;
+    document.getElementById('closing-saldo').textContent = Calc.minutesToBalanceDisplay(balance);
+    document.getElementById('closing-saldo-message').textContent = Dashboard.describeBalance(balance);
+    document.getElementById('closing-previstas').textContent = Calc.minutesToDisplay(summary.planned);
+    document.getElementById('closing-trabalhadas').textContent = Calc.minutesToDisplay(summary.worked);
+    document.getElementById('closing-dias-trabalhados').textContent = summary.daysWorked;
+    document.getElementById('closing-dias-restantes').textContent = summary.daysRemaining;
+    document.getElementById('closing-dias-incompletos').textContent = summary.incomplete;
+    document.getElementById('closing-horas-faltantes').textContent = Calc.minutesToDisplay(summary.missing);
+    document.getElementById('closing-horas-extras').textContent = Calc.minutesToDisplay(summary.extras);
+    document.getElementById('closing-dias-folga').textContent = summary.folgas;
+    document.getElementById('closing-dias-feriado').textContent = summary.feriados;
+    document.getElementById('closing-dias-mes').textContent = summary.totalDays;
+    document.getElementById('closing-progress-label').textContent = `${Calc.minutesToDisplay(summary.worked)} / ${Calc.minutesToDisplay(summary.planned)}`;
+    document.getElementById('closing-expected-context').textContent = period === 'month' && current.year === state.currentYear && current.month === state.currentMonth
+      ? 'Jornada prevista até hoje; os próximos dias aparecem como restantes.'
+      : 'Jornada prevista no período selecionado.';
+    document.getElementById('closing-progress-fill').style.width = `${summary.planned ? Math.min(100, Math.round((summary.worked / summary.planned) * 100)) : 0}%`;
   }
 
   // ─── Tela: CONFIGURAÇÕES ─────────────────────────────────────────────────────
@@ -478,6 +557,9 @@ const App = (() => {
     const c = state.config || {};
     document.getElementById('cfg-nome').value    = c.nome    || '';
     document.getElementById('cfg-empresa').value = c.empresa || '';
+    document.getElementById('cfg-cnpj').value = c.cnpj || '';
+    document.getElementById('cfg-endereco').value = c.endereco || '';
+    document.getElementById('cfg-atividade').value = c.atividade || '';
     document.getElementById('cfg-cargo').value   = c.cargo   || '';
   }
 
@@ -541,11 +623,15 @@ const App = (() => {
     const config = {
       nome:    document.getElementById('cfg-nome').value.trim(),
       empresa: document.getElementById('cfg-empresa').value.trim(),
+      cnpj: document.getElementById('cfg-cnpj').value.trim(),
+      endereco: document.getElementById('cfg-endereco').value.trim(),
+      atividade: document.getElementById('cfg-atividade').value.trim(),
       cargo:   document.getElementById('cfg-cargo').value.trim(),
     };
     try {
       showLoader('Salvando perfil...');
       state.config = await Api.saveConfig(config);
+      Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
       hideLoader();
       document.getElementById('topbar-user').textContent = state.config.nome || '';
       toast('✅ Perfil salvo com sucesso!', 'success');
@@ -631,26 +717,64 @@ const App = (() => {
 
   // ─── Carregamento de dados ────────────────────────────────────────────────────
 
-  async function loadMonthData(year, month) {
+  function cacheKey(year, month) { return `${year}-${month}`; }
+
+  async function fetchMonth(year, month) {
+    const key = cacheKey(year, month);
+    if (state.monthCache.has(key)) return state.monthCache.get(key);
     try {
       const data = await Api.getCalendar(year, month);
+      state.monthCache.set(key, data);
+      Storage.setMonth(year, month, data);
+      return data;
+    } catch (error) {
+      const cached = Storage.getMonth(year, month);
+      if (cached) {
+        state.monthCache.set(key, cached);
+        toast('Exibindo a última versão sincronizada deste mês.', 'info', 3500);
+        return cached;
+      }
+      throw error;
+    }
+  }
+
+  async function loadMonthData(year, month) {
+    try {
+      const data = await fetchMonth(year, month);
       state.monthData    = data;
       state.currentYear  = year;
       state.currentMonth = month;
-      // Atualiza o "hoje" se o mês carregado for o mês atual
-      const now = new Date();
-      if (year === now.getFullYear() && month === now.getMonth()) {
-        state.today = data.today;
-      }
+      const now = Calc.getCurrentMonth();
+      if (year === now.year && month === now.month) state.today = data.today;
+      return data;
     } catch (err) {
       toast(`❌ Erro ao carregar mês: ${err.message}`, 'error', 6000);
+      return null;
     }
+  }
+
+  async function getDaysForRange(startKey, endKey) {
+    const requested = new Map();
+    const cursor = new Date(`${startKey}T12:00:00`);
+    const end = new Date(`${endKey}T12:00:00`);
+    while (cursor <= end) {
+      const year = cursor.getFullYear();
+      const month = cursor.getMonth();
+      const key = cacheKey(year, month);
+      if (!requested.has(key)) requested.set(key, { year, month });
+      cursor.setMonth(cursor.getMonth() + 1, 1);
+    }
+
+    const datasets = await Promise.all([...requested.values()].map(({ year, month }) => fetchMonth(year, month)));
+    return datasets.flatMap((data) => (data.calendar || []).filter(Boolean));
   }
 
   // ─── Inicialização ────────────────────────────────────────────────────────────
 
   async function init() {
     showLoader('Iniciando Meu Ponto...');
+    setupEvents();
+    setSyncState(navigator.onLine ? 'syncing' : 'offline');
 
     try {
       const shell = await Api.getShell();
@@ -658,6 +782,7 @@ const App = (() => {
       state.schedule = shell.schedule || {};
       state.holidays = shell.holidays || {};
       state.today    = shell.today    || null;
+      Storage.setShell(shell);
 
       // Exibir nome do usuário na topbar
       if (state.config.nome) {
@@ -668,20 +793,34 @@ const App = (() => {
       await loadMonthData(state.currentYear, state.currentMonth);
 
     } catch (err) {
-      hideLoader();
-      toast(`❌ Erro ao conectar: ${err.message}`, 'error', 8000);
-      document.getElementById('today-date').textContent = 'Erro de conexão';
-      document.getElementById('today-meta').textContent = 'Verifique se o Apps Script está publicado corretamente.';
-      return;
+      const cachedShell = Storage.getShell();
+      if (!cachedShell) {
+        hideLoader();
+        setSyncState(navigator.onLine ? 'error' : 'offline');
+        toast(`❌ Erro ao conectar: ${err.message}`, 'error', 8000);
+        document.getElementById('today-date').textContent = 'Não foi possível carregar seus dados';
+        document.getElementById('today-meta').textContent = 'Confirme a publicação do Apps Script e tente novamente.';
+        return;
+      }
+      state.config = cachedShell.config || {};
+      state.schedule = cachedShell.schedule || {};
+      state.holidays = cachedShell.holidays || {};
+      state.today = cachedShell.today || null;
+      await loadMonthData(state.currentYear, state.currentMonth);
+      toast('Sem conexão. Exibindo dados sincronizados anteriormente.', 'info', 5000);
     }
 
     hideLoader();
     navigate('today');
     startClockUpdate();
-    setupEvents();
   }
 
   function setupEvents() {
+    if (state.eventsReady) return;
+    state.eventsReady = true;
+    window.addEventListener('meu-ponto:api', (event) => setSyncState(event.detail.state));
+    window.addEventListener('online', () => setSyncState('syncing'));
+    window.addEventListener('offline', () => setSyncState('offline'));
     // Navegação bottom nav / side nav
     document.querySelectorAll('[data-screen]').forEach(el => {
       el.addEventListener('click', () => navigate(el.dataset.screen));
@@ -691,20 +830,18 @@ const App = (() => {
     document.getElementById('cal-prev-btn').addEventListener('click', () => changeCalendarMonth(-1));
     document.getElementById('cal-next-btn').addEventListener('click', () => changeCalendarMonth(1));
     document.getElementById('cal-nav-today-btn').addEventListener('click', () => {
-      const now = new Date();
-      state.currentYear  = now.getFullYear();
-      state.currentMonth = now.getMonth();
+      const now = Calc.getCurrentMonth();
+      state.currentYear  = now.year;
+      state.currentMonth = now.month;
       loadMonthData(state.currentYear, state.currentMonth).then(() => renderCalendarScreen());
     });
 
     // Histórico: navegação
     document.getElementById('hist-prev-btn').addEventListener('click', () => {
       changeCalendarMonth(-1);
-      renderHistory();
     });
     document.getElementById('hist-next-btn').addEventListener('click', () => {
       changeCalendarMonth(1);
-      renderHistory();
     });
 
     // Fechar modais
@@ -744,15 +881,44 @@ const App = (() => {
     document.getElementById('print-btn-hist').addEventListener('click', () => {
       Print.print(state.monthData, state.currentYear, state.currentMonth);
     });
+    document.getElementById('pdf-btn-closing').addEventListener('click', () => {
+      toast('Escolha “Salvar como PDF” na janela de impressão para gerar o arquivo.', 'info', 4500);
+      Print.print(state.monthData, state.currentYear, state.currentMonth);
+    });
+
+    // Dashboard de saldo
+    document.querySelectorAll('.period-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.dashboardPeriod = button.dataset.period;
+        if (state.dashboardPeriod === 'custom' && !state.customRange) {
+          const now = Calc.getCurrentMonth();
+          const start = `${now.year}-${String(now.month + 1).padStart(2, '0')}-01`;
+          const end = Calc.getTodayKey();
+          state.customRange = { start, end };
+          document.getElementById('period-start').value = start;
+          document.getElementById('period-end').value = end;
+        }
+        renderClosing();
+      });
+    });
+    document.getElementById('apply-custom-period').addEventListener('click', () => {
+      const start = document.getElementById('period-start').value;
+      const end = document.getElementById('period-end').value;
+      if (!start || !end || start > end) {
+        toast('Informe um período válido.', 'error');
+        return;
+      }
+      state.dashboardPeriod = 'custom';
+      state.customRange = { start, end };
+      renderClosing();
+    });
 
     // Fechamento: navegação de mês
     document.getElementById('closing-prev-btn').addEventListener('click', () => {
       changeCalendarMonth(-1);
-      renderClosing();
     });
     document.getElementById('closing-next-btn').addEventListener('click', () => {
       changeCalendarMonth(1);
-      renderClosing();
     });
 
     // Trabalhar no feriado
@@ -763,6 +929,7 @@ const App = (() => {
         state.holidays = await Api.saveHoliday(state.today.dateKey, state.today.holiday.nome, true);
         const updatedDay = await Api.getDayState(state.today.dateKey);
         state.today = updatedDay;
+        updateCachedDay(updatedDay);
         hideLoader();
         renderToday();
         toast('✅ Modo "trabalho no feriado" ativado.', 'success');
@@ -792,6 +959,13 @@ const App = (() => {
 })();
 
 // Iniciar quando o DOM estiver pronto
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // O app segue utilizável em hosts que não permitem service workers.
+    });
+  }
+});
 
 window.App = App;

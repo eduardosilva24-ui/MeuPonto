@@ -13,12 +13,14 @@ function parseDateKey(key) {
   if (parts.length < 3) {
     return new Date();
   }
-  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  // 15:00 UTC sempre pertence ao mesmo dia em America/Sao_Paulo.
+  return new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 15, 0, 0));
 }
 
 function getWeekdayName(date) {
   var weekdays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  return weekdays[date.getDay()];
+  var isoDay = Number(Utilities.formatDate(date, TZ, 'u')); // Seg=1 ... Dom=7
+  return weekdays[isoDay % 7];
 }
 
 function getMonthName(monthIndex) {
@@ -36,17 +38,17 @@ function isLeapYear(year) {
 }
 
 function getMonthCalendar(year, monthIndex) {
-  var firstDay = new Date(year, monthIndex, 1);
+  var firstDay = parseDateKey(year + '-' + pad2(monthIndex + 1) + '-01');
   var lastDay = getLastDayOfMonth(year, monthIndex);
   var calendar = [];
-  var offset = (firstDay.getDay() + 6) % 7;
+  var offset = Number(Utilities.formatDate(firstDay, TZ, 'u')) - 1;
 
   for (var i = 0; i < offset; i += 1) {
     calendar.push(null);
   }
 
   for (var day = 1; day <= lastDay; day += 1) {
-    calendar.push(new Date(year, monthIndex, day));
+    calendar.push(parseDateKey(year + '-' + pad2(monthIndex + 1) + '-' + pad2(day)));
   }
 
   while (calendar.length % 7 !== 0) {
@@ -84,10 +86,7 @@ function toMinutes(value) {
 }
 
 function getDisplayDate(date) {
-  var day = date.getDate();
-  var month = date.getMonth() + 1;
-  var year = date.getFullYear();
-  return day + '/' + pad2(month) + '/' + year;
+  return Utilities.formatDate(date, TZ, 'dd/MM/yyyy');
 }
 
 function zeroPadDate(date) {
@@ -95,5 +94,5 @@ function zeroPadDate(date) {
 }
 
 function getTodayInTimeZone() {
-  return new Date(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'));
+  return parseDateKey(toDateKey(new Date()));
 }

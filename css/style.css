@@ -80,6 +80,21 @@ img { display: block; max-width: 100%; }
 }
 .brand-icon { font-size: 1.3rem; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .7rem;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: rgba(255,255,255,.9);
+}
+.sync-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; }
+.sync-status.synced::before { background: #4ade80; }
+.sync-status.offline::before, .sync-status.error::before { background: #fb7185; }
+.sync-status.syncing::before { background: #fbbf24; animation: pulse 1s infinite; }
 .topbar-user {
   font-size: .8rem;
   opacity: .75;
@@ -163,6 +178,9 @@ img { display: block; max-width: 100%; }
   color: var(--muted);
   margin-top: 4px;
 }
+.today-clock { font-size: clamp(2.15rem, 10vw, 3.35rem); letter-spacing: -.08em; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; margin-top: 10px; }
+.today-greeting { font-size: 1rem; color: var(--ink2); font-weight: 650; margin-top: 14px; }
+.eyebrow { color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .today-meta strong { color: var(--ink2); }
 
 /* Status badge */
@@ -190,6 +208,7 @@ img { display: block; max-width: 100%; }
   gap: 12px;
   padding: 28px 20px;
 }
+.punch-wrap .punch-btn { margin-top: 7px; }
 .punch-btn {
   display: flex;
   flex-direction: column;
@@ -230,6 +249,8 @@ img { display: block; max-width: 100%; }
 
 /* Registros do dia */
 .record-list { display: flex; flex-direction: column; gap: 2px; }
+.last-record { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: var(--radius-sm); padding: 10px 12px; font-size: .78rem; color: var(--muted); }
+.last-record strong { color: var(--ink); font-size: .85rem; font-variant-numeric: tabular-nums; }
 .record-row {
   display: flex;
   align-items: center;
@@ -274,6 +295,23 @@ img { display: block; max-width: 100%; }
 .metric-value { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .metric-value.positive { color: var(--success); }
 .metric-value.negative { color: var(--danger); }
+
+.confirmation-card {
+  background: var(--success-bg);
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius);
+  margin-top: 12px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: confirmation-in .25s ease-out;
+}
+.confirmation-card strong, .confirmation-card span { display: block; }
+.confirmation-card span:not(.confirmation-mark) { font-size: .8rem; margin-top: 2px; color: #15803d; }
+.confirmation-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--success); font-weight: 900; flex: none; }
+@keyframes confirmation-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
 /* ══════════════════════════════════════════════════════════════════════════
    TELA: CALENDÁRIO
@@ -423,6 +461,27 @@ img { display: block; max-width: 100%; }
   gap: 10px;
   margin-bottom: 16px;
 }
+.dashboard-card { overflow: hidden; }
+.period-switch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 4px; background: var(--bg); border-radius: 12px; margin: 18px 0 12px; }
+.period-btn { background: transparent; border: 0; border-radius: 8px; padding: 8px 4px; color: var(--muted); font-weight: 700; font-size: .75rem; cursor: pointer; }
+.period-btn.active { color: var(--ink); background: var(--panel); box-shadow: var(--shadow-sm); }
+.custom-period { padding: 10px; border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 8px; }
+.custom-period label { color: var(--muted); font-size: .7rem; font-weight: 700; }
+.custom-period input { width: 100%; margin-top: 4px; border: 1px solid var(--border2); border-radius: 7px; padding: 7px; background: var(--panel); color: var(--ink); }
+.saldo-hero { text-align: center; border-radius: 18px; padding: 24px 18px 20px; background: #f8fafc; border: 1px solid var(--border); margin: 14px 0; }
+.saldo-hero.saldo-positive { background: linear-gradient(145deg,#f0fdf4,#dcfce7); border-color: #bbf7d0; }
+.saldo-hero.saldo-negative { background: linear-gradient(145deg,#fff7ed,#ffedd5); border-color: #fed7aa; }
+.saldo-label { color: var(--muted); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.saldo-amount { font-variant-numeric: tabular-nums; font-size: clamp(2.75rem, 12vw, 4rem); letter-spacing: -.08em; font-weight: 900; margin-top: 5px; }
+.saldo-positive .saldo-amount { color: #15803d; }
+.saldo-negative .saldo-amount { color: #c2410c; }
+.saldo-message { color: var(--ink2); font-size: .875rem; margin-top: 7px; }
+.progress-summary { border-bottom: 1px solid var(--border); padding: 2px 0 16px; margin-bottom: 16px; }
+.progress-labels { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: .85rem; color: var(--muted); }
+.progress-labels strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.progress-track { overflow: hidden; height: 9px; border-radius: 99px; background: var(--off-bg); margin: 9px 0 8px; }
+.progress-fill { height: 100%; min-width: 0; background: var(--accent); border-radius: inherit; transition: width .35s ease; }
+.saldo-positive ~ .progress-summary .progress-fill { background: var(--success); }
 .closing-stat {
   background: #f8fafc;
   border: 1px solid var(--border);
@@ -750,17 +809,18 @@ img { display: block; max-width: 100%; }
 
 @media print {
   body > *:not(#print-view) { display: none !important; }
+  @page { size: A4 portrait; margin: 10mm; }
   #print-view {
     display: block !important;
     font-family: Arial, sans-serif;
     font-size: 10pt;
     color: #000;
     margin: 0;
-    padding: 15mm;
+    padding: 0;
   }
 
   .print-header { text-align: center; margin-bottom: 12mm; }
-  .print-title { font-size: 18pt; font-weight: bold; letter-spacing: 2px; margin-bottom: 4mm; }
+  .print-title { font-size: 14pt; font-weight: bold; letter-spacing: .5px; margin-bottom: 2mm; }
   .print-subtitle { font-size: 10pt; color: #444; margin-bottom: 6mm; }
   .print-info-grid {
     display: grid;
@@ -771,6 +831,7 @@ img { display: block; max-width: 100%; }
     padding: 4mm;
   }
   .print-info-row { display: flex; gap: 4mm; font-size: 9pt; }
+  .print-info-wide { grid-column: 1 / -1; }
   .print-info-label { font-weight: bold; min-width: 70pt; flex-shrink: 0; }
   .print-info-value { border-bottom: 1pt solid #000; flex: 1; }
 
@@ -789,15 +850,17 @@ img { display: block; max-width: 100%; }
     padding: 1.5mm 3mm;
     text-align: center;
     font-size: 8.5pt;
-    height: 9mm;
+    height: 6.8mm;
     vertical-align: middle;
   }
   .print-table td:first-child { text-align: left; }
   .print-table td.assinatura { width: 45mm; }
+  .print-table td.print-day { width: 15mm; }
   .print-table tr:nth-child(even) td { background: #f5f5f5; }
   .print-table .total-row td { font-weight: bold; background: #e8e8e8; border-top: 2pt solid #000; }
 
   .print-footer { margin-top: 10mm; display: flex; justify-content: space-between; font-size: 8pt; color: #666; }
+  .print-totals { display: flex; gap: 7mm; flex-wrap: wrap; margin-top: 4mm; font-size: 8.5pt; }
   .print-sign-line { border-top: 1pt solid #000; padding-top: 2mm; text-align: center; font-size: 8pt; min-width: 60mm; }
 }
 
@@ -877,4 +940,9 @@ img { display: block; max-width: 100%; }
   .side-nav-item:hover { background: var(--bg); color: var(--ink); }
   .side-nav-item.active { background: var(--primary); color: white; }
   .side-nav-item .nav-icon { font-size: 1.1rem; }
+}
+
+@media (max-width: 420px) {
+  .custom-period { grid-template-columns: 1fr 1fr; }
+  .custom-period .btn { grid-column: 1 / -1; }
 }

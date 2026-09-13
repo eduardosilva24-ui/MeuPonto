@@ -21,13 +21,18 @@ const Calc = (() => {
     return (negative ? '-' : '') + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
   }
 
-  /** Formata minutos como texto amigável: "6h44" ou "-0h15" */
+  /** Formata minutos como texto amigável: "06h44" ou "-00h15" */
   function minutesToDisplay(totalMinutes) {
     const negative = totalMinutes < 0;
     const abs      = Math.abs(Math.round(totalMinutes));
     const h        = Math.floor(abs / 60);
     const m        = abs % 60;
-    return (negative ? '-' : '') + h + 'h' + (m > 0 ? String(m).padStart(2, '0') : '');
+    return (negative ? '-' : '') + String(h).padStart(2, '0') + 'h' + String(m).padStart(2, '0');
+  }
+
+  function minutesToBalanceDisplay(totalMinutes) {
+    if (!totalMinutes) return '00h00';
+    return (totalMinutes > 0 ? '+' : '-') + minutesToDisplay(Math.abs(totalMinutes));
   }
 
   /**
@@ -142,19 +147,33 @@ const Calc = (() => {
    * Retorna o mês atual como { year, month } (monthIndex 0-based)
    */
   function getCurrentMonth() {
-    const now = new Date();
-    return { year: now.getFullYear(), month: now.getMonth() };
+    const parts = getSaoPauloDateParts();
+    return { year: parts.year, month: parts.month - 1 };
   }
 
   /**
    * Retorna a dateKey de hoje em formato "YYYY-MM-DD" (baseado em horário local)
    */
   function getTodayKey() {
-    const now  = new Date();
-    const y    = now.getFullYear();
-    const m    = String(now.getMonth() + 1).padStart(2, '0');
-    const d    = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const parts = getSaoPauloDateParts();
+    return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  }
+
+  /** Relógio do produto: sempre America/Sao_Paulo, independentemente do dispositivo. */
+  function getSaoPauloDateParts(date = new Date()) {
+    const pieces = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).reduce((result, piece) => {
+      if (piece.type !== 'literal') result[piece.type] = Number(piece.value);
+      return result;
+    }, {});
+    return { year: pieces.year, month: pieces.month, day: pieces.day, hour: pieces.hour, minute: pieces.minute };
+  }
+
+  function getSaoPauloTime(date = new Date()) {
+    const parts = getSaoPauloDateParts(date);
+    return `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
   }
 
   /**
@@ -195,6 +214,7 @@ const Calc = (() => {
     toMinutes,
     minutesToText,
     minutesToDisplay,
+    minutesToBalanceDisplay,
     calculateWorkedMinutes,
     getPredictedMinutes,
     getNextAction,
@@ -205,6 +225,8 @@ const Calc = (() => {
     formatDateFull,
     getCurrentMonth,
     getTodayKey,
+    getSaoPauloDateParts,
+    getSaoPauloTime,
     buildMonthGrid,
     MONTH_NAMES,
     WEEKDAY_NAMES_SHORT,

@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <title>Meu Ponto</title>
     <meta
       name="description"
@@ -19,6 +21,7 @@
           <span>Meu Ponto</span>
         </div>
         <div class="topbar-right">
+          <span id="sync-status" class="sync-status" role="status" aria-live="polite">Conectando</span>
           <span id="topbar-user" class="topbar-user">Usuário</span>
         </div>
       </header>
@@ -37,8 +40,8 @@
           <span>Histórico</span>
         </button>
         <button class="nav-item" data-screen="closing" type="button">
-          <span class="nav-icon">🧾</span>
-          <span>Fechamento</span>
+          <span class="nav-icon">◔</span>
+          <span>Saldo</span>
         </button>
         <button class="nav-item" data-screen="settings" type="button">
           <span class="nav-icon">⚙️</span>
@@ -50,11 +53,14 @@
         <section id="screen-today" class="screen active">
           <div class="today-header">
             <div id="today-date" class="today-date">Carregando...</div>
+            <div id="today-clock" class="today-clock" aria-live="off">--:--</div>
+            <div id="today-greeting" class="today-greeting">Aguarde...</div>
             <div id="today-meta" class="today-meta">Aguarde...</div>
             <span id="today-status-badge" class="status-badge badge-pending">Carregando</span>
           </div>
 
           <div class="card">
+            <p class="eyebrow">Próxima ação</p>
             <div class="punch-wrap">
               <button id="punch-btn" class="punch-btn btn-entrada" type="button">
                 <span class="btn-icon">⏰</span>
@@ -68,7 +74,20 @@
               </button>
             </div>
 
+            <div class="last-record" aria-live="polite">
+              <span>Último registro</span>
+              <strong id="today-last-record">Nenhum registro ainda</strong>
+            </div>
+
             <div id="record-list" class="record-list mt-16"></div>
+          </div>
+
+          <div id="punch-confirmation" class="confirmation-card hidden" role="status" aria-live="polite">
+            <span class="confirmation-mark">✓</span>
+            <div>
+              <strong id="confirmation-title">Ponto registrado</strong>
+              <span id="confirmation-detail">Registro salvo com sucesso.</span>
+            </div>
           </div>
 
           <div class="metrics-grid mt-16">
@@ -143,11 +162,39 @@
         </section>
 
         <section id="screen-closing" class="screen">
-          <div class="card">
+          <div class="card dashboard-card">
             <div class="hist-nav">
               <button id="closing-prev-btn" class="cal-nav-btn" type="button" aria-label="Mês anterior">‹</button>
-              <div id="closing-title" class="cal-title">Fechamento</div>
+              <div>
+                <p class="eyebrow">Saldo de horas</p>
+                <div id="closing-title" class="cal-title">Este mês</div>
+              </div>
               <button id="closing-next-btn" class="cal-nav-btn" type="button" aria-label="Próximo mês">›</button>
+            </div>
+
+            <div class="period-switch" role="group" aria-label="Período do saldo">
+              <button class="period-btn" data-period="today" type="button">Hoje</button>
+              <button class="period-btn" data-period="week" type="button">Semana</button>
+              <button class="period-btn active" data-period="month" type="button">Mês</button>
+              <button class="period-btn" data-period="custom" type="button">Período</button>
+            </div>
+
+            <div id="custom-period" class="custom-period hidden">
+              <label>De <input id="period-start" type="date" /></label>
+              <label>Até <input id="period-end" type="date" /></label>
+              <button id="apply-custom-period" class="btn btn-sm btn-primary" type="button">Aplicar</button>
+            </div>
+
+            <div id="saldo-hero" class="saldo-hero saldo-neutral">
+              <div class="saldo-label">Saldo atual</div>
+              <div id="closing-saldo" class="saldo-amount">—</div>
+              <p id="closing-saldo-message" class="saldo-message">Calculando seu saldo...</p>
+            </div>
+
+            <div class="progress-summary" aria-label="Comparação entre horas trabalhadas e previstas">
+              <div class="progress-labels"><span>Horas trabalhadas</span><strong id="closing-progress-label">—</strong></div>
+              <div class="progress-track"><div id="closing-progress-fill" class="progress-fill"></div></div>
+              <p id="closing-expected-context" class="text-muted text-sm">Jornada prevista no período</p>
             </div>
 
             <div class="closing-hero">
@@ -159,20 +206,28 @@
                 <div id="closing-trabalhadas" class="closing-stat-value">—</div>
                 <div class="closing-stat-label">Trabalhadas</div>
               </div>
-              <div id="closing-saldo-card" class="closing-stat saldo-positive">
-                <div id="closing-saldo" class="closing-stat-value">—</div>
-                <div class="closing-stat-label">Saldo</div>
-              </div>
               <div class="closing-stat">
                 <div id="closing-dias-trabalhados" class="closing-stat-value">0</div>
-                <div class="closing-stat-label">Dias úteis</div>
+                <div class="closing-stat-label">Dias trabalhados</div>
+              </div>
+              <div class="closing-stat">
+                <div id="closing-dias-restantes" class="closing-stat-value">0</div>
+                <div class="closing-stat-label">Dias restantes</div>
               </div>
             </div>
 
             <div class="closing-details">
               <div class="closing-row">
-                <span class="closing-row-label">Dias incompletos</span>
+                <span class="closing-row-label">Registros incompletos</span>
                 <span id="closing-dias-incompletos" class="closing-row-value">0</span>
+              </div>
+              <div class="closing-row">
+                <span class="closing-row-label">Horas faltantes</span>
+                <span id="closing-horas-faltantes" class="closing-row-value">00h00</span>
+              </div>
+              <div class="closing-row">
+                <span class="closing-row-label">Horas extras</span>
+                <span id="closing-horas-extras" class="closing-row-value">00h00</span>
               </div>
               <div class="closing-row">
                 <span class="closing-row-label">Dias de folga</span>
@@ -189,7 +244,8 @@
             </div>
 
             <div class="mt-16">
-              <button id="print-btn-closing" class="btn btn-primary" type="button">Imprimir fechamento</button>
+              <button id="print-btn-closing" class="btn btn-primary" type="button">Imprimir cartão</button>
+              <button id="pdf-btn-closing" class="btn" type="button">Gerar PDF</button>
             </div>
           </div>
         </section>
@@ -211,6 +267,20 @@
                 <div>
                   <label class="field-label" for="cfg-empresa">Empresa</label>
                   <input id="cfg-empresa" class="field-input" type="text" placeholder="Empresa" />
+                </div>
+                <div class="field-row">
+                  <div>
+                    <label class="field-label" for="cfg-cnpj">CNPJ</label>
+                    <input id="cfg-cnpj" class="field-input" type="text" inputmode="numeric" placeholder="00.000.000/0000-00" />
+                  </div>
+                  <div>
+                    <label class="field-label" for="cfg-atividade">Atividade</label>
+                    <input id="cfg-atividade" class="field-input" type="text" placeholder="Atividade da empresa" />
+                  </div>
+                </div>
+                <div>
+                  <label class="field-label" for="cfg-endereco">Endereço</label>
+                  <input id="cfg-endereco" class="field-input" type="text" placeholder="Endereço da empresa" />
                 </div>
                 <div>
                   <label class="field-label" for="cfg-cargo">Cargo</label>
@@ -326,10 +396,18 @@
     <div id="print-view"></div>
 
     <script>
-      window.MEU_PONTO_API_URL = 'https://script.google.com/macros/s/AKfycbw0BiP9Ymq9NMLkQnmXOd-rnTIlmmuWI6-ex3Qdt-eL1hBUCo4G9cfiKUL96A_oEwFVVA/exec';
+      const params = new URLSearchParams(window.location.search);
+      const queryApiUrl = params.get('api');
+      const storageApiUrl = localStorage.getItem('MEU_PONTO_API_URL');
+      const fallbackApiUrl = 'https://script.google.com/macros/s/AKfycbw0BiP9Ymq9NMLkQnmXOd-rnTIlmmuWI6-ex3Qdt-eL1hBUCo4G9cfiKUL96A_oEwFVVA/exec';
+
+      window.MEU_PONTO_API_URL = queryApiUrl || storageApiUrl || fallbackApiUrl;
     </script>
     <script src="./js/api.js"></script>
     <script src="./js/calculations.js"></script>
+    <script src="./js/storage.js"></script>
+    <script src="./js/calendar.js"></script>
+    <script src="./js/dashboard.js"></script>
     <script src="./js/print.js"></script>
     <script src="./js/app.js"></script>
   </body>

@@ -7,9 +7,11 @@
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';
   if (!action) {
-    return HtmlService.createHtmlOutputFromFile('Frontend')
-      .setTitle('Meu Ponto')
-      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    return jsonResponse({
+      ok: false,
+      error: 'Endpoint de API. Informe uma ação válida.',
+      service: 'Meu Ponto API'
+    });
   }
 
   var rawParam = (e && e.parameter && e.parameter.p) ? e.parameter.p : '{}';
@@ -37,18 +39,22 @@ function routeAction(action, params, e) {
 
     // Carregamento inicial: config + jornada + feriados + estado de hoje
     case 'getShell':
+      var shellContext = createDataContext();
       return {
-        config:   readConfig(),
-        schedule: readSchedule(),
-        holidays: readHolidays(),
-        today:    buildDailyState(new Date())
+        config:   shellContext.config,
+        schedule: shellContext.schedule,
+        holidays: shellContext.holidays,
+        today:    buildDailyState(new Date(), shellContext)
       };
 
     // Calendário completo de um mês
     case 'getCalendar': {
       var year  = Number(params.year  || (e && e.parameter.year)  || new Date().getFullYear());
       var month = Number(params.month || (e && e.parameter.month) || new Date().getMonth());
-      return getAppDataForMonth(new Date(year, month, 1));
+      if (!isFinite(year) || !isFinite(month) || year < 2000 || year > 2100 || month < 0 || month > 11) {
+        throw new Error('Período inválido.');
+      }
+      return getAppDataForMonth(parseDateKey(year + '-' + pad2(month + 1) + '-01'));
     }
 
     // Registrar ponto (entrada / saidaCafe / voltaCafe / saida)
@@ -73,6 +79,9 @@ function routeAction(action, params, e) {
       var config = readConfig();
       config.nome              = params.nome              !== undefined ? params.nome              : config.nome;
       config.empresa           = params.empresa           !== undefined ? params.empresa           : config.empresa;
+      config.cnpj              = params.cnpj              !== undefined ? params.cnpj              : config.cnpj;
+      config.endereco          = params.endereco          !== undefined ? params.endereco          : config.endereco;
+      config.atividade         = params.atividade         !== undefined ? params.atividade         : config.atividade;
       config.cargo             = params.cargo             !== undefined ? params.cargo             : config.cargo;
       config.horarioPadrao     = params.horarioPadrao     !== undefined ? params.horarioPadrao     : config.horarioPadrao;
       config.intervaloPadrao   = params.intervaloPadrao   !== undefined ? Number(params.intervaloPadrao) : config.intervaloPadrao;
@@ -99,6 +108,7 @@ function routeAction(action, params, e) {
           };
         }
       });
+      validateSchedule(schedule);
       saveSchedule(schedule);
       return schedule;
     }
@@ -125,6 +135,9 @@ function routeAction(action, params, e) {
     case 'getMonthlySummary': {
       var sYear  = Number(params.year  || (e && e.parameter.year)  || new Date().getFullYear());
       var sMonth = Number(params.month || (e && e.parameter.month) || new Date().getMonth());
+      if (!isFinite(sYear) || !isFinite(sMonth) || sYear < 2000 || sYear > 2100 || sMonth < 0 || sMonth > 11) {
+        throw new Error('Período inválido.');
+      }
       return getMonthlySummary(sYear, sMonth);
     }
 

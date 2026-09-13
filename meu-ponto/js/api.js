@@ -2,9 +2,20 @@
 // Camada de comunicação com o Google Apps Script via GET/CORS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_URL = (typeof window !== 'undefined' && window.MEU_PONTO_API_URL)
-  ? window.MEU_PONTO_API_URL
-  : 'https://script.google.com/macros/s/SEU_WEB_APP_ID/exec';
+function resolveApiUrl() {
+  if (typeof window === 'undefined') {
+    return 'https://script.google.com/macros/s/SEU_WEB_APP_ID/exec';
+  }
+
+  const qs = new URLSearchParams(window.location.search);
+  const queryUrl = qs.get('api');
+  const storageUrl = window.localStorage ? window.localStorage.getItem('MEU_PONTO_API_URL') : null;
+  const globalUrl = window.MEU_PONTO_API_URL;
+
+  return queryUrl || globalUrl || storageUrl || 'https://script.google.com/macros/s/SEU_WEB_APP_ID/exec';
+}
+
+const API_URL = resolveApiUrl();
 
 /**
  * Faz uma chamada GET para o Apps Script.
@@ -12,6 +23,9 @@ const API_URL = (typeof window !== 'undefined' && window.MEU_PONTO_API_URL)
  * Objetos/arrays complexos são serializados como JSON no parâmetro `p`.
  */
 async function apiCall(action, params = {}) {
+  if (API_URL.includes('SEU_WEB_APP_ID')) {
+    throw new Error('URL do Apps Script não configurada. Defina window.MEU_PONTO_API_URL ou use ?api=https://.../exec');
+  }
   const qs = new URLSearchParams({ action });
 
   // Parâmetros simples (string/number/boolean) vão direto

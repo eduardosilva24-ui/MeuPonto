@@ -25,7 +25,7 @@ function ensureCoreSheets() {
     },
     {
       name: 'PONTOS',
-      headers: ['ID', 'Data', 'Entrada', 'SaidaCafe', 'VoltaCafe', 'Saida', 'Status', 'TotalTrabalhado', 'Observacao', 'AtualizadoEm']
+      headers: ['ID', 'Data', 'Entrada', 'SaidaCafe', 'VoltaCafe', 'Saida', 'Status', 'TotalTrabalhado', 'Observacao', 'AtualizadoEm', 'JornadaPrevistaMinutos', 'JornadaSnapshot', 'Origem', 'CriadoEm']
     },
     {
       name: 'FERIADOS',
@@ -33,7 +33,7 @@ function ensureCoreSheets() {
     },
     {
       name: 'AJUSTES',
-      headers: ['ID', 'Data', 'Tipo', 'ValorAntigo', 'ValorNovo', 'Motivo', 'CriadoEm']
+      headers: ['ID', 'Data', 'Tipo', 'ValorAntigo', 'ValorNovo', 'Motivo', 'Responsavel', 'CriadoEm']
     }
   ];
 
@@ -73,6 +73,9 @@ function readConfig() {
   var config = {
     nome:            '',
     empresa:         '',
+    cnpj:            '',
+    endereco:        '',
+    atividade:       '',
     cargo:           '',
     jornada:         '08:00',
     horarioPadrao:   '08:00',
@@ -106,7 +109,7 @@ function readConfig() {
 
 function writeConfig(config) {
   var sheet = getSheet('CONFIG');
-  var keys = ['nome', 'empresa', 'cargo', 'jornada', 'horarioPadrao', 'intervaloPadrao', 'timezone', 'trabalhaFeriado'];
+  var keys = ['nome', 'empresa', 'cnpj', 'endereco', 'atividade', 'cargo', 'jornada', 'horarioPadrao', 'intervaloPadrao', 'timezone', 'trabalhaFeriado'];
   var values = [];
 
   for (var i = 0; i < keys.length; i += 1) {
@@ -128,7 +131,7 @@ function readSchedule() {
   var sheet = getSheet('JORNADA');
   var values = sheet.getDataRange().getValues();
   if (!values.length || !values[0] || values[0][0] !== 'Dia') {
-    return {};
+    return getDefaultSchedule();
   }
 
   var schedule = {};
@@ -148,7 +151,19 @@ function readSchedule() {
     };
   }
 
-  return schedule;
+  return Object.keys(schedule).length ? schedule : getDefaultSchedule();
+}
+
+function getDefaultSchedule() {
+  return {
+    'Segunda': { dia: 'Segunda', trabalha: true, entrada: '15:00', saidaCafe: '', voltaCafe: '', saida: '21:00', observacao: '' },
+    'Terça':   { dia: 'Terça', trabalha: true, entrada: '15:00', saidaCafe: '', voltaCafe: '', saida: '21:00', observacao: '' },
+    'Quarta':  { dia: 'Quarta', trabalha: true, entrada: '15:00', saidaCafe: '', voltaCafe: '', saida: '21:00', observacao: '' },
+    'Quinta':  { dia: 'Quinta', trabalha: true, entrada: '15:00', saidaCafe: '', voltaCafe: '', saida: '21:00', observacao: '' },
+    'Sexta':   { dia: 'Sexta', trabalha: true, entrada: '14:00', saidaCafe: '', voltaCafe: '', saida: '20:00', observacao: '' },
+    'Sábado':  { dia: 'Sábado', trabalha: true, entrada: '08:00', saidaCafe: '', voltaCafe: '', saida: '15:00', observacao: '' },
+    'Domingo': { dia: 'Domingo', trabalha: false, entrada: '', saidaCafe: '', voltaCafe: '', saida: '', observacao: 'Folga' }
+  };
 }
 
 function saveSchedule(schedule) {
@@ -265,6 +280,8 @@ function ensureDailyRow(dateKey) {
   }
 
   var now = new Date();
+  var schedule = getScheduleForDate(parseDateKey(dateKey));
+  var nowText = Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm:ss');
   var rowData = [
     Utilities.formatDate(now, TZ, 'yyyyMMddHHmmss'),
     dateKey,
@@ -272,7 +289,11 @@ function ensureDailyRow(dateKey) {
     'Pendente',
     '0:00',
     '',
-    Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm:ss')
+    nowText,
+    getPredictedMinutes(schedule),
+    JSON.stringify(schedule),
+    'web',
+    nowText
   ];
 
   sheet.appendRow(rowData);
@@ -296,7 +317,7 @@ function updateDailyRow(dateKey, valuesMap) {
     return updateDailyRow(dateKey, valuesMap);
   }
 
-  var range = sheet.getRange(rowIndex, 1, 1, 10);
+  var range = sheet.getRange(rowIndex, 1, 1, 14);
   var row = range.getValues()[0];
   var updated = row.slice();
 

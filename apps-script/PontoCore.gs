@@ -10,6 +10,9 @@ function getDefaultConfig() {
   return {
     nome:            '',
     empresa:         '',
+    cnpj:            '',
+    endereco:        '',
+    atividade:       '',
     cargo:           '',
     jornada:         '08:00',
     horarioPadrao:   '08:00',
@@ -21,9 +24,24 @@ function getDefaultConfig() {
 
 // ─── Jornada ─────────────────────────────────────────────────────────────────
 
-function getScheduleForDate(date) {
+function createDataContext() {
+  var points = getSheet('PONTOS').getDataRange().getValues();
+  var pointsByDate = {};
+  for (var i = 1; i < points.length; i += 1) {
+    var row = points[i];
+    if (row[1]) pointsByDate[String(row[1]).trim()] = row;
+  }
+  return {
+    config: readConfig(),
+    schedule: readSchedule(),
+    holidays: readHolidays(),
+    pointsByDate: pointsByDate
+  };
+}
+
+function getScheduleForDate(date, context) {
   var weekday  = getWeekdayName(date);
-  var schedule = readSchedule();
+  var schedule = context && context.schedule ? context.schedule : readSchedule();
   var defaultSchedule = {
     dia:        weekday,
     trabalha:   false,
@@ -44,8 +62,8 @@ function isHoliday(dateKey) {
   return !!holidays[dateKey];
 }
 
-function getHolidayConfig(dateKey) {
-  var holidays = readHolidays();
+function getHolidayConfig(dateKey, context) {
+  var holidays = context && context.holidays ? context.holidays : readHolidays();
   return holidays[dateKey] || null;
 }
 
@@ -82,16 +100,76 @@ function getPredictedMinutes(schedule) {
   return Math.max(saida - entrada - intervalo, 0);
 }
 
+function isValidDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+function isValidTime(value) {
+  if (!/^\d{2}:\d{2}$/.test(String(value || ''))) return false;
+  var parts = String(value).split(':');
+  return Number(parts[0]) >= 0 && Number(parts[0]) <= 23 && Number(parts[1]) >= 0 && Number(parts[1]) <= 59;
+}
+
+function validateTimeline(row) {
+  var entry = row.Entrada || '';
+  var coffeeExit = row.SaidaCafe || '';
+  var coffeeReturn = row.VoltaCafe || '';
+  var exit = row.Saida || '';
+  var times = [entry, coffeeExit, coffeeReturn, exit];
+  for (var i = 0; i < times.length; i += 1) {
+    if (times[i] && !isValidTime(times[i])) return { valid: false, message: 'Horário inválido. Use HH:MM.' };
+  }
+  if (coffeeExit && !entry) return { valid: false, message: 'Saída para café exige uma entrada.' };
+  if (coffeeReturn && !coffeeExit) return { valid: false, message: 'Volta do café exige saída para café.' };
+  if (exit && !entry) return { valid: false, message: 'Saída exige uma entrada.' };
+  if (entry && coffeeExit && toMinutes(coffeeExit) <= toMinutes(entry)) return { valid: false, message: 'Saída para café deve ser posterior à entrada.' };
+  if (coffeeExit && coffeeReturn && toMinutes(coffeeReturn) <= toMinutes(coffeeExit)) return { valid: false, message: 'Volta do café deve ser posterior à saída para café.' };
+  if (coffeeReturn && exit && toMinutes(exit) <= toMinutes(coffeeReturn)) return { valid: false, message: 'Saída deve ser posterior à volta do café.' };
+  if (!coffeeReturn && entry && exit && toMinutes(exit) <= toMinutes(entry)) return { valid: false, message: 'Saída deve ser posterior à entrada.' };
+  return { valid: true };
+}
+
+function validateSchedule(schedule) {
+  var names = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+  names.forEach(function (name) {
+    var item = schedule[name] || {};
+    if (!item.trabalha) return;
+    if (!isValidTime(item.entrada) || !isValidTime(item.saida)) {
+      throw new Error('Informe entrada e saída válidas para ' + name + '.');
+    }
+    if (toMinutes(item.saida) <= toMinutes(item.entrada)) {
+      throw new Error('A saída deve ser posterior à entrada em ' + name + '.');
+    }
+    if ((item.saidaCafe && !item.voltaCafe) || (!item.saidaCafe && item.voltaCafe)) {
+      throw new Error('Informe os dois horários de café em ' + name + ' ou deixe ambos vazios.');
+    }
+    if (item.saidaCafe && (toMinutes(item.saidaCafe) <= toMinutes(item.entrada) || toMinutes(item.voltaCafe) <= toMinutes(item.saidaCafe) || toMinutes(item.saida) <= toMinutes(item.voltaCafe))) {
+      throw new Error('Os horários de café em ' + name + ' não estão em ordem.');
+    }
+  });
+}
+
 // ─── Estado diário ───────────────────────────────────────────────────────────
 
-function buildDailyState(date) {
+function parseScheduleSnapshot(value) {
+  if (!value) return null;
+  try {
+    var parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildDailyState(date, context) {
   var dateKey  = toDateKey(date);
-  var config   = readConfig();
-  var schedule = getScheduleForDate(date);
-  var holiday  = getHolidayConfig(dateKey);
-  var row      = getDailyPointRow(dateKey) || {
-    0: '', 1: dateKey, 2: '', 3: '', 4: '', 5: '', 6: 'Pendente', 7: '0:00', 8: '', 9: ''
+  var config   = context && context.config ? context.config : readConfig();
+  var row      = context && context.pointsByDate ? context.pointsByDate[dateKey] : getDailyPointRow(dateKey);
+  row = row || {
+    0: '', 1: dateKey, 2: '', 3: '', 4: '', 5: '', 6: 'Pendente', 7: '0:00', 8: '', 9: '', 10: '', 11: ''
   };
+  var schedule = parseScheduleSnapshot(row[11]) || getScheduleForDate(date, context);
+  var holiday  = getHolidayConfig(dateKey, context);
 
   var isWorkDay = !!(schedule.trabalha || (holiday && holiday.trabalha));
 
@@ -121,17 +199,17 @@ function buildDailyState(date) {
     daily.status = 'Feriado';
   }
 
-  daily.predictedMinutes   = getPredictedMinutes(schedule);
+  daily.predictedMinutes   = holiday && !holiday.trabalha ? 0 : (Number(row[10]) || getPredictedMinutes(schedule));
   daily.totalWorkedMinutes = calculateWorkedMinutes(daily.entradas);
   daily.hoursWorked        = minutesToText(daily.totalWorkedMinutes);
   daily.saldo              = daily.totalWorkedMinutes - daily.predictedMinutes;
   daily.saldoText          = minutesToText(daily.saldo);
 
   // Próxima ação
-  if (!daily.available) {
-    daily.nextAction = 'FOLGA';
-  } else if (holiday && !holiday.trabalha) {
+  if (holiday && !holiday.trabalha) {
     daily.nextAction = 'FERIADO';
+  } else if (!daily.available) {
+    daily.nextAction = 'FOLGA';
   } else if (!daily.entradas.entrada) {
     daily.nextAction = 'ENTRADA';
   } else if (!daily.entradas.saidaCafe) {
@@ -150,6 +228,9 @@ function buildDailyState(date) {
 // ─── Validação ───────────────────────────────────────────────────────────────
 
 function validatePunch(dateKey, type, value) {
+  if (!isValidDateKey(dateKey) || !isValidTime(value)) {
+    return { valid: false, message: 'Data ou horário inválido.' };
+  }
   var day          = buildDailyState(parseDateKey(dateKey));
   var entry        = day.entradas.entrada;
   var coffeeExit   = day.entradas.saidaCafe;
@@ -198,6 +279,7 @@ function validatePunch(dateKey, type, value) {
 
 function createAuditLog(dateKey, type, oldValue, newValue, reason) {
   var sheet = getSheet('AJUSTES');
+  var config = readConfig();
   var row = [
     Utilities.formatDate(new Date(), TZ, 'yyyyMMddHHmmss'),
     dateKey,
@@ -205,6 +287,7 @@ function createAuditLog(dateKey, type, oldValue, newValue, reason) {
     oldValue  || '',
     newValue  || '',
     reason    || 'Correção manual',
+    config.nome || 'Usuário',
     Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss')
   ];
   sheet.appendRow(row);
@@ -213,50 +296,45 @@ function createAuditLog(dateKey, type, oldValue, newValue, reason) {
 // ─── Registro de ponto ────────────────────────────────────────────────────────
 
 function registerPunch(type) {
-  var date    = new Date();
-  var dateKey = toDateKey(date);
-  var time    = Utilities.formatDate(date, TZ, 'HH:mm');
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Outro registro está sendo processado. Tente novamente em alguns segundos.');
+  try {
+    var date    = new Date();
+    var dateKey = toDateKey(date);
+    var time    = Utilities.formatDate(date, TZ, 'HH:mm');
+    var validation = validatePunch(dateKey, type, time);
+    if (!validation.valid) throw new Error(validation.message);
 
-  var validation = validatePunch(dateKey, type, time);
-  if (!validation.valid) {
-    throw new Error(validation.message);
+    var existingRow = ensureDailyRow(dateKey);
+    var values = {
+      ID:       existingRow[0] || Utilities.formatDate(date, TZ, 'yyyyMMddHHmmss'),
+      Data:     dateKey,
+      Entrada:  type === 'entrada' ? time : String(existingRow[2] || ''),
+      SaidaCafe: type === 'saidaCafe' ? time : String(existingRow[3] || ''),
+      VoltaCafe: type === 'voltaCafe' ? time : String(existingRow[4] || ''),
+      Saida:    type === 'saida' ? time : String(existingRow[5] || ''),
+      Status:   'Pendente',
+      TotalTrabalhado: '0:00',
+      Observacao: String(existingRow[8] || '')
+    };
+    var timeline = validateTimeline(values);
+    if (!timeline.valid) throw new Error(timeline.message);
+    var worked = calculateWorkedMinutes(values);
+    var hasAllPunches = !!(values.Entrada && values.SaidaCafe && values.VoltaCafe && values.Saida);
+    values.Status = hasAllPunches ? 'Completo' : 'Pendente';
+    values.TotalTrabalhado = minutesToText(worked);
+    updateDailyRow(dateKey, values);
+    return buildDailyState(date);
+  } finally {
+    lock.releaseLock();
   }
-
-  var existingRow = ensureDailyRow(dateKey);
-
-  var values = {
-    ID:       existingRow[0] || Utilities.formatDate(date, TZ, 'yyyyMMddHHmmss'),
-    Data:     dateKey,
-    Entrada:  type === 'entrada'   ? time : String(existingRow[2] || ''),
-    SaidaCafe: type === 'saidaCafe' ? time : String(existingRow[3] || ''),
-    VoltaCafe: type === 'voltaCafe' ? time : String(existingRow[4] || ''),
-    Saida:    type === 'saida'     ? time : String(existingRow[5] || ''),
-    Status:   'Pendente',
-    TotalTrabalhado: '0:00',
-    Observacao: String(existingRow[8] || '')
-  };
-
-  // Calcular status e total trabalhado com os valores atualizados
-  var worked = calculateWorkedMinutes({
-    Entrada:   values.Entrada,
-    Saida:     values.Saida,
-    SaidaCafe: values.SaidaCafe,
-    VoltaCafe: values.VoltaCafe
-  });
-
-  var hasAllPunches = !!(values.Entrada && values.SaidaCafe && values.VoltaCafe && values.Saida);
-  values.Status          = hasAllPunches ? 'Completo' : 'Pendente';
-  values.TotalTrabalhado = minutesToText(worked);
-
-  updateDailyRow(dateKey, values);
-
-  // Retorna o estado atualizado
-  return buildDailyState(date);
 }
 
 // ─── Edição de registro ──────────────────────────────────────────────────────
 
 function editRecord(dateKey, field, newValue, motivo) {
+  if (!isValidDateKey(dateKey)) throw new Error('Data inválida.');
+  if (field !== 'Observacao' && !isValidTime(newValue)) throw new Error('Horário inválido. Use HH:MM.');
   var row = getDailyPointRow(dateKey);
   if (!row) {
     throw new Error('Não existe registro para a data: ' + dateKey);
@@ -286,6 +364,8 @@ function editRecord(dateKey, field, newValue, motivo) {
     SaidaCafe: field === 'SaidaCafe' ? newValue : String(row[3] || ''),
     VoltaCafe: field === 'VoltaCafe' ? newValue : String(row[4] || '')
   };
+  var timeline = validateTimeline(updatedRow);
+  if (!timeline.valid) throw new Error(timeline.message);
   var worked = calculateWorkedMinutes(updatedRow);
   var hasAll = !!(updatedRow.Entrada && updatedRow.SaidaCafe && updatedRow.VoltaCafe && updatedRow.Saida);
 
@@ -300,79 +380,67 @@ function editRecord(dateKey, field, newValue, motivo) {
 
 // ─── Resumo mensal ────────────────────────────────────────────────────────────
 
-function getMonthlySummary(year, monthIndex) {
-  var totalWorked   = 0;
-  var totalPlanned  = 0;
-  var daysWorked    = 0;
+function getMonthlySummary(year, monthIndex, context) {
+  var runtime = context || createDataContext();
+  var totalWorked = 0;
+  var totalPlanned = 0;
+  var totalExtra = 0;
+  var totalMissing = 0;
+  var daysWorked = 0;
   var daysIncomplete = 0;
-  var daysFolga     = 0;
-  var daysFeriado   = 0;
-  var daysInMonth   = getLastDayOfMonth(year, monthIndex);
+  var daysFolga = 0;
+  var daysFeriado = 0;
+  var daysRemaining = 0;
+  var daysInMonth = getLastDayOfMonth(year, monthIndex);
+  var todayKey = toDateKey(new Date());
 
   for (var day = 1; day <= daysInMonth; day += 1) {
-    var date      = new Date(year, monthIndex, day);
-    var dateKey   = toDateKey(date);
-    var holiday   = getHolidayConfig(dateKey);
-    var schedule  = getScheduleForDate(date);
-    var isWorkDay = !!(schedule.trabalha || (holiday && holiday.trabalha));
-    var row       = getDailyPointRow(dateKey) || [];
+    var date = parseDateKey(year + '-' + pad2(monthIndex + 1) + '-' + pad2(day));
+    var daily = buildDailyState(date, runtime);
+    var isFuture = daily.dateKey > todayKey;
+    if (daily.nextAction === 'FERIADO') { daysFeriado += 1; continue; }
+    if (daily.nextAction === 'FOLGA') { daysFolga += 1; continue; }
+    if (!daily.available) continue;
 
-    if (holiday && !holiday.trabalha) {
-      daysFeriado += 1;
-    } else if (!isWorkDay) {
-      daysFolga += 1;
-    }
-
-    if (isWorkDay) {
-      daysWorked  += 1;
-      totalPlanned += getPredictedMinutes(schedule);
-
-      if (row.length && row[2] && row[5]) {
-        var worked = calculateWorkedMinutes({
-          Entrada:   String(row[2] || ''),
-          Saida:     String(row[5] || ''),
-          SaidaCafe: String(row[3] || ''),
-          VoltaCafe: String(row[4] || '')
-        });
-        totalWorked += worked;
-      }
-
-      // Dia incompleto: deveria trabalhar mas não tem todos os pontos
-      var status = String(row[6] || '');
-      if (status === 'Pendente' || (!row.length && new Date(year, monthIndex, day) < new Date())) {
-        var hasEntry = row.length && row[2];
-        if (!hasEntry && new Date(year, monthIndex, day) < new Date()) {
-          daysIncomplete += 1;
-        } else if (hasEntry && !(row[2] && row[3] && row[4] && row[5])) {
-          daysIncomplete += 1;
-        }
-      }
+    totalPlanned += daily.predictedMinutes;
+    totalWorked += daily.totalWorkedMinutes;
+    totalExtra += Math.max(daily.totalWorkedMinutes - daily.predictedMinutes, 0);
+    if (isFuture) {
+      daysRemaining += 1;
+    } else {
+      totalMissing += Math.max(daily.predictedMinutes - daily.totalWorkedMinutes, 0);
+      if (daily.nextAction === 'FINALIZADO') daysWorked += 1;
+      else daysIncomplete += 1;
     }
   }
 
   return {
-    year:              year,
-    monthIndex:        monthIndex,
-    monthName:         getMonthName(monthIndex),
-    daysInMonth:       daysInMonth,
-    daysWorked:        daysWorked,
-    daysFolga:         daysFolga,
-    daysFeriado:       daysFeriado,
-    daysIncomplete:    daysIncomplete,
-    horasPrevistas:    minutesToText(totalPlanned),
-    horasTrabalhadas:  minutesToText(totalWorked),
-    saldo:             minutesToText(totalWorked - totalPlanned),
-    saldoMinutes:      totalWorked - totalPlanned
+    year: year,
+    monthIndex: monthIndex,
+    monthName: getMonthName(monthIndex),
+    daysInMonth: daysInMonth,
+    daysWorked: daysWorked,
+    daysRemaining: daysRemaining,
+    daysFolga: daysFolga,
+    daysFeriado: daysFeriado,
+    daysIncomplete: daysIncomplete,
+    horasPrevistas: minutesToText(totalPlanned),
+    horasTrabalhadas: minutesToText(totalWorked),
+    horasFaltantes: minutesToText(totalMissing),
+    horasExtras: minutesToText(totalExtra),
+    saldo: minutesToText(totalWorked - totalPlanned),
+    saldoMinutes: totalWorked - totalPlanned
   };
 }
 
 // ─── Dados do mês (calendário completo) ──────────────────────────────────────
 
 function getAppDataForMonth(baseDate) {
-  var year        = baseDate.getFullYear();
-  var monthIndex  = baseDate.getMonth();
+  var year        = Number(Utilities.formatDate(baseDate, TZ, 'yyyy'));
+  var monthIndex  = Number(Utilities.formatDate(baseDate, TZ, 'M')) - 1;
   var monthCal    = getMonthCalendar(year, monthIndex);
-  var summary     = getMonthlySummary(year, monthIndex);
+  var context     = createDataContext();
+  var summary     = getMonthlySummary(year, monthIndex, context);
   var data        = [];
 
   monthCal.forEach(function (day) {
@@ -380,18 +448,18 @@ function getAppDataForMonth(baseDate) {
       data.push(null);
       return;
     }
-    data.push(buildDailyState(day));
+    data.push(buildDailyState(day, context));
   });
 
   return {
     monthName:  getMonthName(monthIndex),
     year:       year,
     monthIndex: monthIndex,
-    today:      buildDailyState(new Date()),
+    today:      buildDailyState(new Date(), context),
     calendar:   data,
     summary:    summary,
-    config:     readConfig(),
-    schedule:   readSchedule(),
-    holidays:   readHolidays()
+    config:     context.config,
+    schedule:   context.schedule,
+    holidays:   context.holidays
   };
 }

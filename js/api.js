@@ -2,9 +2,20 @@
 // Camada de comunicação com o Google Apps Script via GET/CORS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_URL = (typeof window !== 'undefined' && window.MEU_PONTO_API_URL)
-  ? window.MEU_PONTO_API_URL
-  : 'https://script.google.com/macros/s/SEU_WEB_APP_ID/exec';
+function resolveApiUrl() {
+  if (typeof window === 'undefined') {
+    return 'https://script.google.com/macros/s/AKfycbw0BiP9Ymq9NMLkQnmXOd-rnTIlmmuWI6-ex3Qdt-eL1hBUCo4G9cfiKUL96A_oEwFVVA/exec';
+  }
+
+  const qs = new URLSearchParams(window.location.search);
+  const queryUrl = qs.get('api');
+  const storageUrl = window.localStorage ? window.localStorage.getItem('MEU_PONTO_API_URL') : null;
+  const globalUrl = window.MEU_PONTO_API_URL;
+
+  return queryUrl || globalUrl || storageUrl || 'https://script.google.com/macros/s/AKfycbw0BiP9Ymq9NMLkQnmXOd-rnTIlmmuWI6-ex3Qdt-eL1hBUCo4G9cfiKUL96A_oEwFVVA/exec';
+}
+
+const API_URL = resolveApiUrl();
 
 /**
  * Faz uma chamada GET para o Apps Script.
@@ -13,38 +24,22 @@ const API_URL = (typeof window !== 'undefined' && window.MEU_PONTO_API_URL)
  */
 async function apiCall(action, params = {}) {
   const qs = new URLSearchParams({ action });
-
-  // Parâmetros simples (string/number/boolean) vão direto
-  // Parâmetros complexos (objeto) vão no parâmetro `p`
-  const simple  = {};
-  const complex = {};
-
-  for (const [key, val] of Object.entries(params)) {
-    if (val !== null && val !== undefined && typeof val === 'object') {
-      complex[key] = val;
-    } else if (val !== null && val !== undefined) {
-      simple[key] = String(val);
-    }
-  }
-
-  // Anexar parâmetros simples diretamente
-  for (const [key, val] of Object.entries(simple)) {
-    qs.set(key, val);
-  }
-
-  // Parâmetros complexos como JSON no `p`
-  if (Object.keys(complex).length > 0) {
-    qs.set('p', JSON.stringify(complex));
-  }
+  // Um único envelope JSON evita discrepâncias entre parâmetros simples e objetos.
+  qs.set('p', JSON.stringify(params));
 
   const url = `${API_URL}?${qs.toString()}`;
 
   try {
+    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'syncing', action } }));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
     const res = await fetch(url, {
       method:   'GET',
       redirect: 'follow',
       cache:    'no-store',
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -65,17 +60,23 @@ async function apiCall(action, params = {}) {
       throw new Error(data.error || 'Erro desconhecido no servidor.');
     }
 
+    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'synced', action } }));
     return data.result;
 
   } catch (err) {
     console.error(`[API] Erro na ação "${action}":`, err);
-    throw err;
+    const message = err.name === 'AbortError'
+      ? 'A conexão demorou demais. Verifique sua internet e tente novamente.'
+      : err.message;
+    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: navigator.onLine ? 'error' : 'offline', action } }));
+    throw new Error(message);
   }
 }
 
 // ─── Endpoints específicos ────────────────────────────────────────────────────
 
 const Api = {
+  url: API_URL,
 
   /** Carrega dados iniciais: config, jornada, feriados, estado de hoje */
   async getShell() {
