@@ -101,7 +101,14 @@ function getPredictedMinutes(schedule) {
 }
 
 function isValidDateKey(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+  var text = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  var parts = text.split('-');
+  var year = Number(parts[0]);
+  var month = Number(parts[1]);
+  var day = Number(parts[2]);
+  if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1) return false;
+  return day <= getLastDayOfMonth(year, month - 1);
 }
 
 function isValidTime(value) {
@@ -171,7 +178,7 @@ function buildDailyState(date, context) {
   var schedule = parseScheduleSnapshot(row[11]) || getScheduleForDate(date, context);
   var holiday  = getHolidayConfig(dateKey, context);
 
-  var isWorkDay = !!(schedule.trabalha || (holiday && holiday.trabalha));
+  var isWorkDay = holiday ? !!holiday.trabalha : !!schedule.trabalha;
 
   var daily = {
     id:          row[0] || '',
@@ -335,10 +342,6 @@ function registerPunch(type) {
 function editRecord(dateKey, field, newValue, motivo) {
   if (!isValidDateKey(dateKey)) throw new Error('Data inválida.');
   if (field !== 'Observacao' && !isValidTime(newValue)) throw new Error('Horário inválido. Use HH:MM.');
-  var row = getDailyPointRow(dateKey);
-  if (!row) {
-    throw new Error('Não existe registro para a data: ' + dateKey);
-  }
 
   var fieldIndexMap = {
     Entrada:    2,
@@ -353,6 +356,14 @@ function editRecord(dateKey, field, newValue, motivo) {
     throw new Error('Campo inválido: ' + field + '. Use Entrada, SaidaCafe, VoltaCafe, Saida ou Observacao.');
   }
 
+  var row = getDailyPointRow(dateKey);
+  if (!row) {
+    var day = buildDailyState(parseDateKey(dateKey));
+    if (!day.available) {
+      throw new Error('Não há jornada prevista para esta data. Cadastre trabalho no feriado ou ajuste a jornada antes de inserir marcações.');
+    }
+    row = ensureDailyRow(dateKey);
+  }
   var oldValue = row[fieldIndex];
   var values   = {};
   values[field] = newValue;

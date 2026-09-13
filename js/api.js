@@ -28,18 +28,20 @@ async function apiCall(action, params = {}) {
   qs.set('p', JSON.stringify(params));
 
   const url = `${API_URL}?${qs.toString()}`;
+  let timeout = null;
 
   try {
-    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'syncing', action } }));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'syncing', action } }));
+    }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    timeout = setTimeout(() => controller.abort(), 20000);
     const res = await fetch(url, {
       method:   'GET',
       redirect: 'follow',
       cache:    'no-store',
       signal: controller.signal,
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -60,7 +62,9 @@ async function apiCall(action, params = {}) {
       throw new Error(data.error || 'Erro desconhecido no servidor.');
     }
 
-    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'synced', action } }));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: 'synced', action } }));
+    }
     return data.result;
 
   } catch (err) {
@@ -68,8 +72,13 @@ async function apiCall(action, params = {}) {
     const message = err.name === 'AbortError'
       ? 'A conexão demorou demais. Verifique sua internet e tente novamente.'
       : err.message;
-    window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: navigator.onLine ? 'error' : 'offline', action } }));
+    if (typeof window !== 'undefined') {
+      const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+      window.dispatchEvent(new CustomEvent('meu-ponto:api', { detail: { state: online ? 'error' : 'offline', action } }));
+    }
     throw new Error(message);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 

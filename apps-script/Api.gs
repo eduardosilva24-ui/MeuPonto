@@ -49,8 +49,8 @@ function routeAction(action, params, e) {
 
     // Calendário completo de um mês
     case 'getCalendar': {
-      var year  = Number(params.year  || (e && e.parameter.year)  || new Date().getFullYear());
-      var month = Number(params.month || (e && e.parameter.month) || new Date().getMonth());
+      var year  = Number(pickParam(params, e, 'year', getCurrentYearInSaoPaulo()));
+      var month = Number(pickParam(params, e, 'month', getCurrentMonthInSaoPaulo()));
       if (!isFinite(year) || !isFinite(month) || year < 2000 || year > 2100 || month < 0 || month > 11) {
         throw new Error('Período inválido.');
       }
@@ -118,7 +118,7 @@ function routeAction(action, params, e) {
       var hDateKey  = String(params.dateKey || (e && e.parameter.dateKey) || '');
       var hNome     = String(params.nome    || (e && e.parameter.nome)    || 'Feriado');
       var hTrabalha = params.trabalha === true || params.trabalha === 'true';
-      if (!hDateKey) throw new Error('Parâmetro "dateKey" é obrigatório.');
+      if (!hDateKey || !isValidDateKey(hDateKey)) throw new Error('Parâmetro "dateKey" inválido.');
       writeHoliday(hDateKey, hNome, hTrabalha);
       return readHolidays();
     }
@@ -126,15 +126,15 @@ function routeAction(action, params, e) {
     // Remover feriado
     case 'deleteHoliday': {
       var dDateKey = String(params.dateKey || (e && e.parameter.dateKey) || '');
-      if (!dDateKey) throw new Error('Parâmetro "dateKey" é obrigatório.');
+      if (!dDateKey || !isValidDateKey(dDateKey)) throw new Error('Parâmetro "dateKey" inválido.');
       deleteHoliday(dDateKey);
       return readHolidays();
     }
 
     // Resumo mensal
     case 'getMonthlySummary': {
-      var sYear  = Number(params.year  || (e && e.parameter.year)  || new Date().getFullYear());
-      var sMonth = Number(params.month || (e && e.parameter.month) || new Date().getMonth());
+      var sYear  = Number(pickParam(params, e, 'year', getCurrentYearInSaoPaulo()));
+      var sMonth = Number(pickParam(params, e, 'month', getCurrentMonthInSaoPaulo()));
       if (!isFinite(sYear) || !isFinite(sMonth) || sYear < 2000 || sYear > 2100 || sMonth < 0 || sMonth > 11) {
         throw new Error('Período inválido.');
       }
@@ -144,7 +144,7 @@ function routeAction(action, params, e) {
     // Estado de um dia específico
     case 'getDayState': {
       var dKey = String(params.dateKey || (e && e.parameter.dateKey) || '');
-      if (!dKey) throw new Error('Parâmetro "dateKey" é obrigatório.');
+      if (!dKey || !isValidDateKey(dKey)) throw new Error('Parâmetro "dateKey" inválido.');
       return buildDailyState(parseDateKey(dKey));
     }
 
@@ -160,6 +160,24 @@ function jsonResponse(payload) {
     .createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
   return output;
+}
+
+function pickParam(params, e, key, fallback) {
+  if (params && params[key] !== undefined && params[key] !== null && params[key] !== '') {
+    return params[key];
+  }
+  if (e && e.parameter && e.parameter[key] !== undefined && e.parameter[key] !== null && e.parameter[key] !== '') {
+    return e.parameter[key];
+  }
+  return fallback;
+}
+
+function getCurrentYearInSaoPaulo() {
+  return Number(Utilities.formatDate(new Date(), TZ, 'yyyy'));
+}
+
+function getCurrentMonthInSaoPaulo() {
+  return Number(Utilities.formatDate(new Date(), TZ, 'M')) - 1;
 }
 
 function getAppShell() {

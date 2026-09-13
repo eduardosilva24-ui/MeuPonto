@@ -19,8 +19,7 @@ function parseDateKey(key) {
 
 function getWeekdayName(date) {
   var weekdays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  var isoDay = Number(Utilities.formatDate(date, TZ, 'u')); // Seg=1 ... Dom=7
-  return weekdays[isoDay % 7];
+  return weekdays[date.getUTCDay()];
 }
 
 function getMonthName(monthIndex) {
@@ -41,7 +40,7 @@ function getMonthCalendar(year, monthIndex) {
   var firstDay = parseDateKey(year + '-' + pad2(monthIndex + 1) + '-01');
   var lastDay = getLastDayOfMonth(year, monthIndex);
   var calendar = [];
-  var offset = Number(Utilities.formatDate(firstDay, TZ, 'u')) - 1;
+  var offset = (firstDay.getUTCDay() + 6) % 7;
 
   for (var i = 0; i < offset; i += 1) {
     calendar.push(null);

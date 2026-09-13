@@ -21,12 +21,27 @@ const Storage = (() => {
     }
   }
 
+  function remove(key) {
+    try {
+      localStorage.removeItem(PREFIX + key);
+    } catch (_) {}
+  }
+
+  function clearMonths() {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith(PREFIX + 'month:'))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch (_) {}
+  }
+
   function getShell() { return get('shell'); }
   function setShell(value) { set('shell', value); }
   function getMonth(year, month) { return get(`month:${year}-${month}`); }
   function setMonth(year, month, value) { set(`month:${year}-${month}`, value); }
+  function removeMonth(year, month) { remove(`month:${year}-${month}`); }
 
-  return { getShell, setShell, getMonth, setMonth };
+  return { getShell, setShell, getMonth, setMonth, removeMonth, clearMonths };
 })();
 
 window.Storage = Storage;

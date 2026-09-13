@@ -807,9 +807,10 @@ img { display: block; max-width: 100%; }
   display: none;
 }
 
+@page { size: A4 portrait; margin: 10mm; }
+
 @media print {
   body > *:not(#print-view) { display: none !important; }
-  @page { size: A4 portrait; margin: 10mm; }
   #print-view {
     display: block !important;
     font-family: Arial, sans-serif;
@@ -847,10 +848,10 @@ img { display: block; max-width: 100%; }
   }
   .print-table td {
     border: 1pt solid #000;
-    padding: 1.5mm 3mm;
+    padding: 1.1mm 2.6mm;
     text-align: center;
     font-size: 8.5pt;
-    height: 6.8mm;
+    height: 6mm;
     vertical-align: middle;
   }
   .print-table td:first-child { text-align: left; }

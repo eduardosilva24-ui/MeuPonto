@@ -57,6 +57,25 @@ function ensureCoreSheets() {
     }
   });
 
+  var scheduleSheet = spreadsheet.getSheetByName('JORNADA');
+  if (scheduleSheet && scheduleSheet.getLastRow() < 2) {
+    var defaults = getDefaultSchedule();
+    var orderedDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+    var rows = orderedDays.map(function (day) {
+      var item = defaults[day];
+      return [
+        item.dia,
+        item.trabalha ? 'Sim' : 'Não',
+        item.entrada || '',
+        item.saidaCafe || '',
+        item.voltaCafe || '',
+        item.saida || '',
+        item.observacao || ''
+      ];
+    });
+    scheduleSheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+  }
+
   return spreadsheet;
 }
 

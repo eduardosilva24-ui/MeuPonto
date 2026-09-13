@@ -44,6 +44,12 @@ const App = (() => {
     setTimeout(() => el.remove(), duration);
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;'
+    }[char]));
+  }
+
   function openModal(id) {
     document.getElementById(id).classList.add('open');
   }
@@ -112,7 +118,7 @@ const App = (() => {
     const jornadaStr = jornada && jornada.trabalha && jornada.entrada && jornada.saida
       ? `Jornada prevista: ${jornada.entrada} → ${jornada.saida}`
       : today.available ? 'Jornada definida' : 'Dia de folga ou feriado';
-    document.getElementById('today-meta').innerHTML = jornadaStr;
+    document.getElementById('today-meta').textContent = jornadaStr;
 
     // Badge de status
     const badgeEl = document.getElementById('today-status-badge');
@@ -158,7 +164,7 @@ const App = (() => {
     document.getElementById('metric-previsto').textContent  = predicted ? Calc.minutesToText(predicted) : '—';
     document.getElementById('metric-trabalhado').textContent = Calc.minutesToText(worked);
     const saldoEl = document.getElementById('metric-saldo');
-    saldoEl.textContent = Calc.minutesToText(saldo);
+    saldoEl.textContent = Calc.minutesToBalanceDisplay(saldo);
     saldoEl.className   = `metric-value ${saldo >= 0 ? 'positive' : 'negative'}`;
     document.getElementById('metric-status').textContent = action === 'FINALIZADO' ? 'Completo' : action === 'FOLGA' ? 'Folga' : action === 'FERIADO' ? 'Feriado' : 'Em andamento';
   }
@@ -221,10 +227,7 @@ const App = (() => {
   function startClockUpdate() {
     setInterval(() => {
       if (state.activeScreen === 'today' && state.today) {
-        const isActionable = !['FOLGA','FERIADO','FINALIZADO'].includes(state.today.nextAction);
-        if (isActionable) {
-          updateClock();
-        }
+        updateClock();
       }
     }, 30000); // Atualiza a cada 30s
   }
@@ -340,10 +343,10 @@ const App = (() => {
       : '⏳ Incompleto';
 
     const rows = [
-      ['Entrada',         e.entrada   ],
-      ['Saída para café', e.saidaCafe ],
-      ['Volta do café',   e.voltaCafe ],
-      ['Saída',           e.saida     ],
+      ['Entrada',         e.entrada,   'Entrada'   ],
+      ['Saída para café', e.saidaCafe, 'SaidaCafe' ],
+      ['Volta do café',   e.voltaCafe, 'VoltaCafe' ],
+      ['Saída',           e.saida,     'Saida'     ],
     ];
 
     document.getElementById('day-modal-records').innerHTML = rows.map(([label, val]) => `
@@ -360,27 +363,22 @@ const App = (() => {
     document.getElementById('day-modal-planned').textContent = dayData.predictedMinutes ? Calc.minutesToText(dayData.predictedMinutes) : '—';
     const saldo = (dayData.totalWorkedMinutes || 0) - (dayData.predictedMinutes || 0);
     const saldoEl = document.getElementById('day-modal-saldo');
-    saldoEl.textContent = Calc.minutesToText(saldo);
+    saldoEl.textContent = Calc.minutesToBalanceDisplay(saldo);
     saldoEl.className   = `metric-value ${saldo >= 0 ? 'positive' : 'negative'}`;
 
     // Botões de edição
     const editBtnsEl = document.getElementById('day-modal-edit-btns');
     editBtnsEl.innerHTML = '';
-    if (dayData.available || e.entrada) {
-      [
-        ['Entrada','Entrada',e.entrada], ['Saída Café','SaidaCafe',e.saidaCafe],
-        ['Volta Café','VoltaCafe',e.voltaCafe], ['Saída','Saida',e.saida]
-      ].forEach(([lbl, field, val]) => {
-        if (val) {
-          const b = document.createElement('button');
-          b.className = 'btn btn-sm';
-          b.textContent = `Editar ${lbl}`;
-          b.onclick = () => {
-            closeModal('modal-day');
-            openEditModal(dayData.dateKey, field, val);
-          };
-          editBtnsEl.appendChild(b);
-        }
+    if (dayData.available || Object.values(e).some(Boolean)) {
+      rows.forEach(([lbl, val, field]) => {
+        const b = document.createElement('button');
+        b.className = 'btn btn-sm';
+        b.textContent = val ? `Editar ${lbl}` : `Corrigir ${lbl}`;
+        b.onclick = () => {
+          closeModal('modal-day');
+          openEditModal(dayData.dateKey, field, val || '');
+        };
+        editBtnsEl.appendChild(b);
       });
     }
 
@@ -397,8 +395,9 @@ const App = (() => {
     const m = state.currentMonth;
 
     document.getElementById('cal-title').textContent = `${Calc.MONTH_NAMES[m]} ${y}`;
+    const currentMonth = Calc.getCurrentMonth();
     document.getElementById('cal-nav-today-btn').classList.toggle(
-      'hidden', y === new Date().getFullYear() && m === new Date().getMonth()
+      'hidden', y === currentMonth.year && m === currentMonth.month
     );
 
     // Cabeçalho de dias
@@ -464,13 +463,16 @@ const App = (() => {
 
     tbody.innerHTML = rows.map(day => {
       const e       = day.entradas || {};
+      const isFuture = day.dateKey > Calc.getTodayKey();
       const statusMap = {
         FINALIZADO: ['badge-complete','Completo'],
         FOLGA:      ['badge-folga','Folga'],
         FERIADO:    ['badge-feriado','Feriado'],
         ENTRADA:    ['badge-danger','Sem entrada'],
       };
-      const [badgeClass, statusText] = statusMap[day.nextAction]
+      const [badgeClass, statusText] = isFuture
+        ? ['badge-folga', 'Futuro']
+        : statusMap[day.nextAction]
         || ['badge-pending', 'Incompleto'];
 
       return `<tr>
@@ -481,9 +483,16 @@ const App = (() => {
         <td>${e.saida      || '—'}</td>
         <td><strong>${day.hoursWorked && day.hoursWorked !== '00:00' ? day.hoursWorked : '—'}</strong></td>
         <td><span class="status-pill ${badgeClass}">${statusText}</span></td>
-        <td><button class="hist-edit-btn" onclick="App.openDayModal(${JSON.stringify(JSON.stringify(day))})">Ver</button></td>
+        <td><button class="hist-edit-btn" type="button" data-history-datekey="${day.dateKey}">Ver</button></td>
       </tr>`;
     }).join('');
+
+    tbody.querySelectorAll('[data-history-datekey]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const day = rows.find((item) => item.dateKey === button.dataset.historyDatekey);
+        if (day) openDayModal(day);
+      });
+    });
   }
 
   // ─── Tela: FECHAMENTO ────────────────────────────────────────────────────────
@@ -611,7 +620,11 @@ const App = (() => {
     try {
       showLoader('Salvando jornada...');
       state.schedule = await Api.saveSchedule(schedule);
+      invalidateAllMonthCaches();
+      await loadMonthData(state.currentYear, state.currentMonth);
+      Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
       hideLoader();
+      refreshActiveScreen();
       toast('✅ Jornada salva com sucesso!', 'success');
     } catch (err) {
       hideLoader();
@@ -655,7 +668,7 @@ const App = (() => {
       <div class="holiday-item">
         <div class="holiday-info">
           <div class="holiday-date">${Calc.formatDateKey(h.data)}</div>
-          <div class="holiday-name">${h.nome}</div>
+          <div class="holiday-name">${escapeHtml(h.nome)}</div>
         </div>
         <span class="holiday-tag ${h.trabalha ? 'badge-pending' : 'badge-feriado'}">
           ${h.trabalha ? 'Trabalho' : 'Folga'}
@@ -679,6 +692,7 @@ const App = (() => {
     try {
       showLoader('Salvando feriado...');
       state.holidays = await Api.saveHoliday(dateKey, nomeVal, trabalha);
+      await refreshAfterHolidayChange(dateKey);
       hideLoader();
       renderHolidayList();
       document.getElementById('holiday-date').value = '';
@@ -696,6 +710,7 @@ const App = (() => {
     try {
       showLoader('Removendo feriado...');
       state.holidays = await Api.deleteHoliday(dateKey);
+      await refreshAfterHolidayChange(dateKey);
       hideLoader();
       renderHolidayList();
       toast('✅ Feriado removido.', 'success');
@@ -718,6 +733,42 @@ const App = (() => {
   // ─── Carregamento de dados ────────────────────────────────────────────────────
 
   function cacheKey(year, month) { return `${year}-${month}`; }
+
+  function monthPartsFromDateKey(dateKey) {
+    const [year, month] = String(dateKey).split('-').map(Number);
+    return { year, month: month - 1 };
+  }
+
+  function invalidateMonthCache(year, month) {
+    state.monthCache.delete(cacheKey(year, month));
+    Storage.removeMonth(year, month);
+  }
+
+  function invalidateAllMonthCaches() {
+    state.monthCache.clear();
+    Storage.clearMonths();
+  }
+
+  function refreshActiveScreen() {
+    if (state.activeScreen === 'today') renderToday();
+    if (state.activeScreen === 'calendar') renderCalendarScreen();
+    if (state.activeScreen === 'history') renderHistory();
+    if (state.activeScreen === 'closing') renderClosing();
+    if (state.activeScreen === 'settings') renderSettings();
+  }
+
+  async function refreshAfterHolidayChange(dateKey) {
+    const { year, month } = monthPartsFromDateKey(dateKey);
+    invalidateMonthCache(year, month);
+    await loadMonthData(state.currentYear, state.currentMonth);
+    const current = Calc.getCurrentMonth();
+    if (dateKey === Calc.getTodayKey() && (state.currentYear !== current.year || state.currentMonth !== current.month)) {
+      state.today = await Api.getDayState(dateKey);
+      updateCachedDay(state.today);
+    }
+    Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
+    refreshActiveScreen();
+  }
 
   async function fetchMonth(year, month) {
     const key = cacheKey(year, month);
@@ -755,14 +806,19 @@ const App = (() => {
 
   async function getDaysForRange(startKey, endKey) {
     const requested = new Map();
-    const cursor = new Date(`${startKey}T12:00:00`);
-    const end = new Date(`${endKey}T12:00:00`);
-    while (cursor <= end) {
-      const year = cursor.getFullYear();
-      const month = cursor.getMonth();
+    const start = monthPartsFromDateKey(startKey);
+    const end = monthPartsFromDateKey(endKey);
+    let year = start.year;
+    let month = start.month;
+
+    while (year < end.year || (year === end.year && month <= end.month)) {
       const key = cacheKey(year, month);
       if (!requested.has(key)) requested.set(key, { year, month });
-      cursor.setMonth(cursor.getMonth() + 1, 1);
+      month += 1;
+      if (month > 11) {
+        month = 0;
+        year += 1;
+      }
     }
 
     const datasets = await Promise.all([...requested.values()].map(({ year, month }) => fetchMonth(year, month)));
@@ -876,12 +932,15 @@ const App = (() => {
 
     // Impressão / PDF
     document.getElementById('print-btn-closing').addEventListener('click', () => {
+      if (!state.monthData) { toast('Carregue um mês antes de imprimir.', 'error'); return; }
       Print.print(state.monthData, state.currentYear, state.currentMonth);
     });
     document.getElementById('print-btn-hist').addEventListener('click', () => {
+      if (!state.monthData) { toast('Carregue um mês antes de imprimir.', 'error'); return; }
       Print.print(state.monthData, state.currentYear, state.currentMonth);
     });
     document.getElementById('pdf-btn-closing').addEventListener('click', () => {
+      if (!state.monthData) { toast('Carregue um mês antes de gerar PDF.', 'error'); return; }
       toast('Escolha “Salvar como PDF” na janela de impressão para gerar o arquivo.', 'info', 4500);
       Print.print(state.monthData, state.currentYear, state.currentMonth);
     });
@@ -927,9 +986,12 @@ const App = (() => {
       try {
         showLoader('Atualizando feriado...');
         state.holidays = await Api.saveHoliday(state.today.dateKey, state.today.holiday.nome, true);
+        const { year, month } = monthPartsFromDateKey(state.today.dateKey);
+        invalidateMonthCache(year, month);
         const updatedDay = await Api.getDayState(state.today.dateKey);
         state.today = updatedDay;
         updateCachedDay(updatedDay);
+        Storage.setShell({ config: state.config, schedule: state.schedule, holidays: state.holidays, today: state.today });
         hideLoader();
         renderToday();
         toast('✅ Modo "trabalho no feriado" ativado.', 'success');

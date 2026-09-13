@@ -67,9 +67,9 @@ const Calc = (() => {
    * Determina a próxima ação do dia baseado nos registros
    */
   function getNextAction(entradas, schedule, holiday) {
-    const isWorkDay = !!(schedule && schedule.trabalha) || !!(holiday && holiday.trabalha);
-    if (!isWorkDay)                          return 'FOLGA';
     if (holiday && !holiday.trabalha)        return 'FERIADO';
+    const isWorkDay = holiday ? !!holiday.trabalha : !!(schedule && schedule.trabalha);
+    if (!isWorkDay)                          return 'FOLGA';
     if (!entradas.entrada)                   return 'ENTRADA';
     if (!entradas.saidaCafe)                 return 'SAIDA_CAFE';
     if (!entradas.voltaCafe)                 return 'VOLTA_CAFE';
