@@ -16,6 +16,14 @@ function resolveApiUrl() {
 }
 
 const API_URL = resolveApiUrl();
+const ACTION_TIMEOUT_MS = {
+  registerPunch: 60000,
+  editRecord: 60000,
+  saveHoliday: 45000,
+  deleteHoliday: 45000,
+  saveSchedule: 45000,
+  saveConfig: 45000,
+};
 
 /**
  * Faz uma chamada GET para o Apps Script.
@@ -54,11 +62,15 @@ async function apiCall(action, params = {}) {
   const url = `${API_URL}?${qs.toString()}`;
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ACTION_TIMEOUT_MS[action] || 30000);
     const res = await fetch(url, {
       method:   'GET',
       redirect: 'follow',
       cache:    'no-store',
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -83,7 +95,10 @@ async function apiCall(action, params = {}) {
 
   } catch (err) {
     console.error(`[API] Erro na ação "${action}":`, err);
-    throw err;
+    const message = err.name === 'AbortError'
+      ? 'A conexão demorou demais. O Google Sheets está processando a ação; espere alguns segundos e tente novamente.'
+      : err.message;
+    throw new Error(message);
   }
 }
 

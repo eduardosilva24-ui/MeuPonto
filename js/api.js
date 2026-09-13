@@ -78,7 +78,7 @@ async function apiCall(action, params = {}) {
   } catch (err) {
     console.error(`[API] Erro na ação "${action}":`, err);
     const message = err.name === 'AbortError'
-      ? 'A conexão demorou demais. Verifique sua internet e tente novamente.'
+      ? 'A conexão demorou demais. O Google Sheets está processando a ação; espere alguns segundos e tente novamente.'
       : err.message;
     if (typeof window !== 'undefined') {
       const online = typeof navigator === 'undefined' ? true : navigator.onLine;

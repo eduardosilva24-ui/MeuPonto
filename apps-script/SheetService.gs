@@ -291,6 +291,19 @@ function getDailyPointRow(dateKey) {
   return null;
 }
 
+function getRowIndexByDateKey(dateKey) {
+  var sheet = getSheet('PONTOS');
+  var values = sheet.getDataRange().getValues();
+
+  for (var i = 1; i < values.length; i += 1) {
+    if (String(values[i][1] || '').trim() === String(dateKey)) {
+      return i + 1;
+    }
+  }
+
+  return -1;
+}
+
 function buildDailyRowData(dateKey, now, schedule) {
   var nowText = Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm:ss');
   return [

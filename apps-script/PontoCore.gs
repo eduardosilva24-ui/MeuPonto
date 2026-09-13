@@ -320,13 +320,25 @@ function registerPunch(type) {
     var time    = Utilities.formatDate(date, TZ, 'HH:mm');
     if (!isValidTime(time)) throw new Error('Horário inválido.');
 
-    var context = createDataContext();
+    var context = {
+      config: readConfig(),
+      schedule: readSchedule(),
+      holidays: readHolidays(),
+      pointsByDate: {},
+      pointRowIndexByDate: {}
+    };
+
+    var existingRow = getDailyPointRow(dateKey);
+    if (existingRow) {
+      context.pointsByDate[dateKey] = existingRow;
+      context.pointRowIndexByDate[dateKey] = getRowIndexByDateKey(dateKey);
+    }
+
     var day = buildDailyState(parseDateKey(dateKey), context);
     var validation = validatePunchAgainstDay(day, type, time);
     if (!validation.valid) throw new Error(validation.message);
 
     var pointsSheet = getSheet('PONTOS');
-    var existingRow = context.pointsByDate[dateKey];
     var rowIndex = context.pointRowIndexByDate[dateKey];
     var isNewRow = !existingRow;
     if (!existingRow) {
@@ -385,8 +397,18 @@ function editRecord(dateKey, field, newValue, motivo) {
     throw new Error('Campo inválido: ' + field + '. Use Entrada, SaidaCafe, VoltaCafe, Saida ou Observacao.');
   }
 
-  var context = createDataContext();
-  var row = context.pointsByDate[dateKey];
+  var context = {
+    config: readConfig(),
+    schedule: readSchedule(),
+    holidays: readHolidays(),
+    pointsByDate: {},
+    pointRowIndexByDate: {}
+  };
+  var row = getDailyPointRow(dateKey);
+  if (row) {
+    context.pointsByDate[dateKey] = row;
+    context.pointRowIndexByDate[dateKey] = getRowIndexByDateKey(dateKey);
+  }
   var rowIndex = context.pointRowIndexByDate[dateKey];
   var isNewRow = !row;
   if (!row) {
