@@ -4,12 +4,26 @@
 
 var SHEET_ID = '1Q0-QD1lk7xn76Z5QMSvqvfDYQOKZKVj1pKBFDh61wAs';
 
+function normalizeSheetName(name) {
+  return String(name || '').trim().toUpperCase();
+}
+
+function findSheetByName(spreadsheet, sheetName) {
+  var targetName = normalizeSheetName(sheetName);
+  var sheets = spreadsheet.getSheets();
+  for (var i = 0; i < sheets.length; i += 1) {
+    if (normalizeSheetName(sheets[i].getName()) === targetName) {
+      return sheets[i];
+    }
+  }
+  return null;
+}
+
 function getSpreadsheet() {
-  try {
-    return SpreadsheetApp.openById(SHEET_ID);
-  } catch (err) {
+  if (!SHEET_ID) {
     return SpreadsheetApp.getActiveSpreadsheet();
   }
+  return SpreadsheetApp.openById(SHEET_ID);
 }
 
 function ensureCoreSheets() {
@@ -38,7 +52,7 @@ function ensureCoreSheets() {
   ];
 
   requiredSheets.forEach(function (sheetConfig) {
-    var sheet = spreadsheet.getSheetByName(sheetConfig.name);
+    var sheet = findSheetByName(spreadsheet, sheetConfig.name);
     if (!sheet) {
       sheet = spreadsheet.insertSheet(sheetConfig.name);
     }
@@ -57,7 +71,7 @@ function ensureCoreSheets() {
     }
   });
 
-  var scheduleSheet = spreadsheet.getSheetByName('JORNADA');
+  var scheduleSheet = findSheetByName(spreadsheet, 'JORNADA');
   if (scheduleSheet && scheduleSheet.getLastRow() < 2) {
     var defaults = getDefaultSchedule();
     var orderedDays = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
@@ -80,11 +94,47 @@ function ensureCoreSheets() {
 }
 
 function getSheet(name) {
+  var spreadsheet = getSpreadsheet();
   ensureCoreSheets();
-  return getSpreadsheet().getSheetByName(name);
+  return findSheetByName(spreadsheet, name) || findSheetByName(getSpreadsheet(), name);
 }
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
+
+function normalizeTimeCell(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+
+  if (value instanceof Date) {
+    return pad2(value.getHours()) + ':' + pad2(value.getMinutes());
+  }
+
+  if (typeof value === 'string') {
+    var text = value.trim();
+    if (!text) return '';
+
+    if (/^\d{2}:\d{2}$/.test(text)) {
+      return text;
+    }
+
+    var match = text.match(/(\d{1,2}):(\d{2})/);
+    if (match) {
+      return pad2(Number(match[1])) + ':' + pad2(Number(match[2]));
+    }
+
+    try {
+      var date = new Date(text);
+      if (!isNaN(date.getTime())) {
+        return pad2(date.getHours()) + ':' + pad2(date.getMinutes());
+      }
+    } catch (_) {}
+
+    return text;
+  }
+
+  return String(value);
+}
 
 function readConfig() {
   var sheet = getSheet('CONFIG');
@@ -118,6 +168,8 @@ function readConfig() {
       config[key] = value === true || String(value).toLowerCase() === 'true' || String(value).toLowerCase() === 'sim';
     } else if (key === 'intervaloPadrao') {
       config[key] = Number(value) || 15;
+    } else if (key === 'jornada' || key === 'horarioPadrao') {
+      config[key] = normalizeTimeCell(value);
     } else {
       config[key] = value;
     }
@@ -162,10 +214,10 @@ function readSchedule() {
     schedule[row[0]] = {
       dia:        row[0],
       trabalha:   String(row[1]).toLowerCase() === 'sim' || row[1] === true || row[1] === 'TRUE',
-      entrada:    String(row[2] || ''),
-      saidaCafe:  String(row[3] || ''),
-      voltaCafe:  String(row[4] || ''),
-      saida:      String(row[5] || ''),
+      entrada:    normalizeTimeCell(row[2]),
+      saidaCafe:  normalizeTimeCell(row[3]),
+      voltaCafe:  normalizeTimeCell(row[4]),
+      saida:      normalizeTimeCell(row[5]),
       observacao: String(row[6] || '')
     };
   }
@@ -278,30 +330,54 @@ function deleteHoliday(dateKey) {
 
 // ─── PONTOS ──────────────────────────────────────────────────────────────────
 
+function scorePointRow(row) {
+  var score = 0;
+  if (String(row[1] || '').trim()) score += 5;
+  for (var i = 2; i <= 5; i += 1) {
+    if (String(row[i] || '').trim()) score += 4;
+  }
+  if (String(row[6] || '').trim()) score += 2;
+  if (String(row[7] || '').trim()) score += 2;
+  if (String(row[8] || '').trim()) score += 1;
+  return score;
+}
+
 function getDailyPointRow(dateKey) {
   var sheet = getSheet('PONTOS');
   var values = sheet.getDataRange().getValues();
+  var match = null;
+  var bestScore = -1;
 
-  for (var i = 1; i < values.length; i += 1) {
+  for (var i = values.length - 1; i >= 1; i -= 1) {
     if (String(values[i][1] || '').trim() === String(dateKey)) {
-      return values[i];
+      var score = scorePointRow(values[i]);
+      if (score > bestScore) {
+        match = values[i];
+        bestScore = score;
+      }
     }
   }
 
-  return null;
+  return match;
 }
 
 function getRowIndexByDateKey(dateKey) {
   var sheet = getSheet('PONTOS');
   var values = sheet.getDataRange().getValues();
+  var bestRowIndex = -1;
+  var bestScore = -1;
 
-  for (var i = 1; i < values.length; i += 1) {
+  for (var i = values.length - 1; i >= 1; i -= 1) {
     if (String(values[i][1] || '').trim() === String(dateKey)) {
-      return i + 1;
+      var score = scorePointRow(values[i]);
+      if (score > bestScore) {
+        bestRowIndex = i + 1;
+        bestScore = score;
+      }
     }
   }
 
-  return -1;
+  return bestRowIndex;
 }
 
 function buildDailyRowData(dateKey, now, schedule) {

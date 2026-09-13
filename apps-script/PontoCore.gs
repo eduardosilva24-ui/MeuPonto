@@ -24,6 +24,18 @@ function getDefaultConfig() {
 
 // ─── Jornada ─────────────────────────────────────────────────────────────────
 
+function scorePointRow(row) {
+  var score = 0;
+  if (String(row[1] || '').trim()) score += 5;
+  for (var i = 2; i <= 5; i += 1) {
+    if (String(row[i] || '').trim()) score += 4;
+  }
+  if (String(row[6] || '').trim()) score += 2;
+  if (String(row[7] || '').trim()) score += 2;
+  if (String(row[8] || '').trim()) score += 1;
+  return score;
+}
+
 function createDataContext() {
   var points = getSheet('PONTOS').getDataRange().getValues();
   var pointsByDate = {};
@@ -32,8 +44,13 @@ function createDataContext() {
     var row = points[i];
     if (row[1]) {
       var dateKey = String(row[1]).trim();
-      pointsByDate[dateKey] = row;
-      pointRowIndexByDate[dateKey] = i + 1;
+      var currentRow = pointsByDate[dateKey];
+      var currentScore = currentRow ? scorePointRow(currentRow) : -1;
+      var nextScore = scorePointRow(row);
+      if (!currentRow || nextScore > currentScore) {
+        pointsByDate[dateKey] = row;
+        pointRowIndexByDate[dateKey] = i + 1;
+      }
     }
   }
   return {
@@ -76,10 +93,10 @@ function getHolidayConfig(dateKey, context) {
 // ─── Cálculos ────────────────────────────────────────────────────────────────
 
 function calculateWorkedMinutes(row) {
-  var entry        = row.Entrada   || '';
-  var exit         = row.Saida     || '';
-  var coffeeExit   = row.SaidaCafe || '';
-  var coffeeReturn = row.VoltaCafe || '';
+  var entry        = row.Entrada   || row.entrada   || '';
+  var exit         = row.Saida     || row.saida     || '';
+  var coffeeExit   = row.SaidaCafe || row.saidaCafe || '';
+  var coffeeReturn = row.VoltaCafe || row.voltaCafe || '';
 
   if (!entry || !exit) {
     return 0;
@@ -196,10 +213,10 @@ function buildDailyState(date, context) {
     holiday:     holiday,
     trabalhaNoFeriado: holiday ? holiday.trabalha : false,
     entradas: {
-      entrada:    String(row[2] || ''),
-      saidaCafe:  String(row[3] || ''),
-      voltaCafe:  String(row[4] || ''),
-      saida:      String(row[5] || ''),
+      entrada:    normalizeTimeCell(row[2] || ''),
+      saidaCafe:  normalizeTimeCell(row[3] || ''),
+      voltaCafe:  normalizeTimeCell(row[4] || ''),
+      saida:      normalizeTimeCell(row[5] || ''),
       observacao: String(row[8] || '')
     },
     status:         String(row[6] || 'Pendente'),
@@ -370,8 +387,14 @@ function registerPunch(type) {
     } else {
       updatedRow = updateDailyRowAt(rowIndex, values, existingRow);
     }
-    context.pointsByDate[dateKey] = updatedRow;
-    context.pointRowIndexByDate[dateKey] = rowIndex;
+    var refreshedRow = getDailyPointRow(dateKey);
+    if (refreshedRow) {
+      context.pointsByDate[dateKey] = refreshedRow;
+      context.pointRowIndexByDate[dateKey] = getRowIndexByDateKey(dateKey);
+    } else {
+      context.pointsByDate[dateKey] = updatedRow;
+      context.pointRowIndexByDate[dateKey] = rowIndex;
+    }
     return buildDailyState(parseDateKey(dateKey), context);
   } finally {
     lock.releaseLock();
@@ -446,8 +469,14 @@ function editRecord(dateKey, field, newValue, motivo) {
   } else {
     updatedRow = updateDailyRowAt(rowIndex, values, row);
   }
-  context.pointsByDate[dateKey] = updatedRow;
-  context.pointRowIndexByDate[dateKey] = rowIndex;
+  var refreshedRow = getDailyPointRow(dateKey);
+  if (refreshedRow) {
+    context.pointsByDate[dateKey] = refreshedRow;
+    context.pointRowIndexByDate[dateKey] = getRowIndexByDateKey(dateKey);
+  } else {
+    context.pointsByDate[dateKey] = updatedRow;
+    context.pointRowIndexByDate[dateKey] = rowIndex;
+  }
   createAuditLog(dateKey, field, oldValue, newValue, motivo || 'Correção manual');
 
   return buildDailyState(parseDateKey(dateKey), context);

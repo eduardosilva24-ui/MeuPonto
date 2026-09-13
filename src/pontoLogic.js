@@ -1,5 +1,46 @@
 const { formatDateKey, getWeekdayName, getLastDayOfMonth } = require('./dateUtils');
 
+function scorePointRow(row = []) {
+  let score = 0;
+  if (String(row[1] || '').trim()) score += 5;
+  for (let i = 2; i <= 5; i += 1) {
+    if (String(row[i] || '').trim()) score += 4;
+  }
+  if (String(row[6] || '').trim()) score += 2;
+  if (String(row[7] || '').trim()) score += 2;
+  if (String(row[8] || '').trim()) score += 1;
+  return score;
+}
+
+function mergeDuplicateDailyEntries(rows = []) {
+  const byDate = new Map();
+
+  rows.forEach((row) => {
+    if (!row || !String(row[1] || '').trim()) return;
+
+    const dateKey = String(row[1]).trim();
+    const candidate = Array.isArray(row) ? row.slice() : [];
+    while (candidate.length < 14) candidate.push('');
+
+    if (!byDate.has(dateKey)) {
+      byDate.set(dateKey, candidate.slice(0, 14));
+      return;
+    }
+
+    const current = byDate.get(dateKey);
+    for (let i = 0; i < 14; i += 1) {
+      const currentValue = String(current[i] || '').trim();
+      const nextValue = String(candidate[i] || '').trim();
+      if (nextValue && (currentValue === '' || i === 0 || (i >= 2 && i <= 5 && nextValue !== currentValue))) {
+        current[i] = candidate[i];
+      }
+    }
+    byDate.set(dateKey, current);
+  });
+
+  return Array.from(byDate.values()).filter((row) => String(row[1] || '').trim());
+}
+
 function getNextActionForDay(dayState) {
   if (dayState && dayState.feriado && !dayState.trabalhaNoFeriado) {
     return 'feriado';
@@ -95,5 +136,7 @@ module.exports = {
   toMinutes,
   calculateDailySummary,
   getExpectedHoursForMonth,
+  mergeDuplicateDailyEntries,
+  scorePointRow,
   formatDateKey
 };
