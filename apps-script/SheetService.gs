@@ -362,45 +362,32 @@ function scorePointRow(row) {
 
 function normalizePunchRow(row, dateKey) {
   if (!row) return null;
+
   var dataRow = row.slice();
   while (dataRow.length < 14) dataRow.push('');
 
-  var legacyMode = String(dataRow[2] || '').trim() && !String(dataRow[2] || '').trim().match(/^(entrada|saidaCafe|voltaCafe|saida)$/i);
-  if (legacyMode) {
+  var type = String(dataRow[2] || dataRow[0] || '').trim().toLowerCase();
+  var time = String(dataRow[3] || dataRow[1] || '').trim();
+
+  if (!['entrada', 'saidacafe', 'saidaCafe', 'voltacafe', 'voltaCafe', 'saida'].includes(type)) {
     return dataRow;
   }
-
-  var valueMap = {
-    entrada:   dataRow[2] || '',
-    saidaCafe: dataRow[2] || '',
-    voltaCafe: dataRow[2] || '',
-    saida:     dataRow[2] || ''
-  };
-
-  var records = {};
-  var rowType = String(dataRow[2] || '').trim().toLowerCase();
-  var rowTime = String(dataRow[3] || '').trim();
-
-  if (rowType === 'entrada') records.entrada = rowTime;
-  else if (rowType === 'saidacafe') records.saidaCafe = rowTime;
-  else if (rowType === 'voltacafe') records.voltaCafe = rowTime;
-  else if (rowType === 'saida') records.saida = rowTime;
 
   var normalized = [
     dataRow[0] || '',
     String(dateKey || dataRow[1] || ''),
-    records.entrada || '',
-    records.saidaCafe || '',
-    records.voltaCafe || '',
-    records.saida || '',
-    dataRow[5] || 'Pendente',
-    dataRow[6] || '0:00',
-    dataRow[7] || '',
+    type === 'saidaCafe' || type === 'saidacafe' ? 'saidaCafe' : type === 'voltaCafe' || type === 'voltacafe' ? 'voltaCafe' : type,
+    time,
+    '',
+    '',
+    'Pendente',
+    '0:00',
     dataRow[8] || '',
     dataRow[9] || '',
     dataRow[10] || '',
-    dataRow[11] || 'web',
-    dataRow[12] || ''
+    dataRow[11] || '',
+    dataRow[12] || 'web',
+    dataRow[13] || ''
   ];
 
   return normalized;
@@ -412,37 +399,35 @@ function getDailyPointRow(dateKey) {
   var aggregate = [
     '', String(dateKey), '', '', '', '', 'Pendente', '0:00', '', '', '', '', 'web', ''
   ];
-  var bestScore = -1;
 
   for (var i = 1; i < rows.length; i += 1) {
     var row = rows[i];
     if (!row || !String(row[1] || '').trim()) continue;
     if (String(row[1]).trim() !== String(dateKey)) continue;
 
-    var rowType = String(row[2] || '').trim().toLowerCase();
-    var rowTime = String(row[3] || row[2] || '').trim();
-    if (rowType === 'entrada') aggregate[2] = normalizeTimeCell(rowTime);
-    else if (rowType === 'saidacafe') aggregate[3] = normalizeTimeCell(rowTime);
-    else if (rowType === 'voltacafe') aggregate[4] = normalizeTimeCell(rowTime);
-    else if (rowType === 'saida') aggregate[5] = normalizeTimeCell(rowTime);
-    else if (String(row[2] || '').trim() && String(row[2]).trim() !== 'Tipo') {
-      aggregate[2] = normalizeTimeCell(row[2]);
+    var normalized = normalizePunchRow(row, dateKey);
+    var rowType = String(normalized[2] || '').trim().toLowerCase();
+    var rowTime = String(normalized[3] || '').trim();
+
+    if (rowType === 'entrada') {
+      aggregate[2] = normalizeTimeCell(rowTime);
+    } else if (rowType === 'saidacafe' || rowType === 'saidaCafe') {
+      aggregate[3] = normalizeTimeCell(rowTime);
+    } else if (rowType === 'voltacafe' || rowType === 'voltaCafe') {
+      aggregate[4] = normalizeTimeCell(rowTime);
+    } else if (rowType === 'saida') {
+      aggregate[5] = normalizeTimeCell(rowTime);
     }
 
-    if (String(row[0] || '').trim()) aggregate[0] = row[0];
-    if (String(row[7] || '').trim()) aggregate[7] = row[7];
-    if (String(row[8] || '').trim()) aggregate[8] = row[8];
-    if (String(row[9] || '').trim()) aggregate[9] = row[9];
-    if (String(row[10] || '').trim()) aggregate[10] = row[10];
-    if (String(row[11] || '').trim()) aggregate[11] = row[11];
-    if (String(row[12] || '').trim()) aggregate[12] = row[12];
-    if (String(row[13] || '').trim()) aggregate[13] = row[13];
-
-    var score = scorePointRow(row);
-    if (score > bestScore) {
-      bestScore = score;
-      aggregate[0] = row[0] || aggregate[0];
-    }
+    if (String(normalized[0] || '').trim()) aggregate[0] = normalized[0];
+    if (String(normalized[6] || '').trim()) aggregate[6] = normalized[6];
+    if (String(normalized[7] || '').trim()) aggregate[7] = normalized[7];
+    if (String(normalized[8] || '').trim()) aggregate[8] = normalized[8];
+    if (String(normalized[9] || '').trim()) aggregate[9] = normalized[9];
+    if (String(normalized[10] || '').trim()) aggregate[10] = normalized[10];
+    if (String(normalized[11] || '').trim()) aggregate[11] = normalized[11];
+    if (String(normalized[12] || '').trim()) aggregate[12] = normalized[12];
+    if (String(normalized[13] || '').trim()) aggregate[13] = normalized[13];
   }
 
   var entry = aggregate[2] || '';
@@ -489,21 +474,65 @@ function buildDailyRowData(dateKey, now, schedule) {
 function appendPunchRow(dateKey, type, time, note) {
   var sheet = getSheet('PONTOS');
   var createdAt = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
-  var row = [
-    Utilities.formatDate(new Date(), TZ, 'yyyyMMddHHmmss'),
-    String(dateKey),
-    String(type).trim(),
-    String(time).trim(),
-    'Pendente',
-    '0:00',
-    String(note || ''),
-    createdAt,
-    '',
-    '',
-    'web',
-    createdAt
-  ];
-  sheet.appendRow(row);
+  var normalizedType = String(type || '').trim().toLowerCase();
+  var typeMap = {
+    entrada: 2,
+    saidaCafe: 3,
+    voltaCafe: 4,
+    saida: 5
+  };
+
+  if (!typeMap[normalizedType]) {
+    throw new Error('Tipo de ponto inválido: ' + type);
+  }
+
+  var values = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+
+  for (var i = 1; i < values.length; i += 1) {
+    if (String(values[i][1] || '').trim() === String(dateKey)) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  var row;
+  if (rowIndex === -1) {
+    row = [
+      Utilities.formatDate(new Date(), TZ, 'yyyyMMddHHmmss'),
+      String(dateKey),
+      '',
+      '',
+      '',
+      '',
+      'Pendente',
+      '0:00',
+      String(note || ''),
+      createdAt,
+      '',
+      '',
+      'web',
+      createdAt
+    ];
+    sheet.appendRow(row);
+    rowIndex = sheet.getLastRow();
+  } else {
+    row = sheet.getRange(rowIndex, 1, 1, 14).getValues()[0];
+  }
+
+  if (String(row[typeMap[normalizedType]] || '').trim()) {
+    throw new Error('Esse tipo de ponto já foi batido para este dia.');
+  }
+
+  row[typeMap[normalizedType]] = String(time || '').trim();
+  row[6] = 'Pendente';
+  row[7] = '0:00';
+  row[8] = String(note || '');
+  row[9] = createdAt;
+  row[12] = 'web';
+  row[13] = createdAt;
+
+  sheet.getRange(rowIndex, 1, 1, 14).setValues([row]);
   return row;
 }
 

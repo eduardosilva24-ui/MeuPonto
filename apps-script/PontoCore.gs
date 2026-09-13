@@ -62,6 +62,38 @@ function createDataContext() {
   };
 }
 
+function getExpectedSchedule(date, context) {
+  var weekday = getWeekdayName(date);
+  var scheduleSource = context && context.schedule ? context.schedule : readSchedule();
+  var defaultSchedule = {
+    dia: 'Domingo',
+    trabalha: false,
+    entrada: '',
+    saidaCafe: '',
+    voltaCafe: '',
+    saida: '',
+    observacao: 'Folga'
+  };
+
+  var customSchedule = scheduleSource[weekday] || null;
+  var schedule = customSchedule || defaultSchedule;
+
+  var start = schedule.trabalha ? (schedule.entrada || null) : null;
+  var end = schedule.trabalha ? (schedule.saida || null) : null;
+  var expectedMinutes = schedule.trabalha
+    ? Math.max(toMinutes(end) - toMinutes(start) - ((schedule.saidaCafe && schedule.voltaCafe) ? (toMinutes(schedule.voltaCafe) - toMinutes(schedule.saidaCafe)) : 0), 0)
+    : 0;
+
+  return {
+    isWorkday: !!schedule.trabalha,
+    dayName: weekday,
+    start: start,
+    end: end,
+    expectedMinutes: expectedMinutes,
+    schedule: schedule
+  };
+}
+
 function getScheduleForDate(date, context) {
   var weekday  = getWeekdayName(date);
   var schedule = context && context.schedule ? context.schedule : readSchedule();
@@ -199,9 +231,10 @@ function buildDailyState(date, context) {
     0: '', 1: dateKey, 2: '', 3: '', 4: '', 5: '', 6: 'Pendente', 7: '0:00', 8: '', 9: '', 10: '', 11: ''
   };
   var schedule = parseScheduleSnapshot(row[11]) || getScheduleForDate(date, context);
+  var expected = getExpectedSchedule(date, context);
   var holiday  = getHolidayConfig(dateKey, context);
 
-  var isWorkDay = holiday ? !!holiday.trabalha : !!schedule.trabalha;
+  var isWorkDay = holiday ? !!holiday.trabalha : !!expected.isWorkday;
 
   var daily = {
     id:          row[0] || '',
@@ -229,7 +262,7 @@ function buildDailyState(date, context) {
     daily.status = 'Feriado';
   }
 
-  daily.predictedMinutes   = holiday && !holiday.trabalha ? 0 : (Number(row[10]) || getPredictedMinutes(schedule));
+  daily.predictedMinutes   = holiday && !holiday.trabalha ? 0 : (Number(row[10]) || expected.expectedMinutes || getPredictedMinutes(schedule));
   daily.totalWorkedMinutes = calculateWorkedMinutes(daily.entradas);
   daily.hoursWorked        = minutesToText(daily.totalWorkedMinutes);
   daily.saldo              = daily.totalWorkedMinutes - daily.predictedMinutes;

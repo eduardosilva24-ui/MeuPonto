@@ -41,6 +41,36 @@ function mergeDuplicateDailyEntries(rows = []) {
   return Array.from(byDate.values()).filter((row) => String(row[1] || '').trim());
 }
 
+function getExpectedSchedule(date, scheduleMap = {}) {
+  const dayName = getWeekdayName(date);
+  const defaultMap = {
+    Segunda: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+    Terça: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+    Quarta: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+    Quinta: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+    Sexta: { trabalha: true, entrada: '14:00', saida: '20:00', saidaCafe: '16:00', voltaCafe: '16:15' },
+    Sábado: { trabalha: true, entrada: '08:00', saida: '15:00', saidaCafe: '', voltaCafe: '' },
+    Domingo: { trabalha: false, entrada: '', saida: '', saidaCafe: '', voltaCafe: '' },
+  };
+
+  const schedule = scheduleMap[dayName] || defaultMap[dayName] || { trabalha: false, entrada: '', saida: '', saidaCafe: '', voltaCafe: '' };
+
+  const start = schedule.trabalha ? schedule.entrada || null : null;
+  const end = schedule.trabalha ? schedule.saida || null : null;
+  const expectedMinutes = schedule.trabalha
+    ? Math.max(toMinutes(end) - toMinutes(start) - ((schedule.saidaCafe && schedule.voltaCafe) ? (toMinutes(schedule.voltaCafe) - toMinutes(schedule.saidaCafe)) : 0), 0)
+    : 0;
+
+  return {
+    isWorkday: !!schedule.trabalha,
+    start,
+    end,
+    expectedMinutes,
+    dayName,
+    schedule,
+  };
+}
+
 function getNextActionForDay(dayState) {
   if (dayState && dayState.feriado && !dayState.trabalhaNoFeriado) {
     return 'feriado';
@@ -130,6 +160,7 @@ function getExpectedHoursForMonth(year, monthIndex, scheduleMap) {
 }
 
 module.exports = {
+  getExpectedSchedule,
   getNextActionForDay,
   minutesToTime,
   calculateWorkedMinutes,

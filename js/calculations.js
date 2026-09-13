@@ -50,6 +50,36 @@ const Calc = (() => {
     return Math.max(total, 0);
   }
 
+  function getExpectedSchedule(date, scheduleMap = {}) {
+    const weekday = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', timeZone: 'America/Sao_Paulo' }).format(date);
+    const normalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    const defaultMap = {
+      Segunda: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+      Terça: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+      Quarta: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+      Quinta: { trabalha: true, entrada: '15:00', saida: '21:00', saidaCafe: '17:00', voltaCafe: '17:15' },
+      Sexta: { trabalha: true, entrada: '14:00', saida: '20:00', saidaCafe: '16:00', voltaCafe: '16:15' },
+      Sábado: { trabalha: true, entrada: '08:00', saida: '15:00', saidaCafe: '', voltaCafe: '' },
+      Domingo: { trabalha: false, entrada: '', saida: '', saidaCafe: '', voltaCafe: '' },
+    };
+
+    const schedule = scheduleMap[normalizedWeekday] || defaultMap[normalizedWeekday] || { trabalha: false, entrada: '', saida: '', saidaCafe: '', voltaCafe: '' };
+    const start = schedule.trabalha ? schedule.entrada || null : null;
+    const end = schedule.trabalha ? schedule.saida || null : null;
+    const expectedMinutes = schedule.trabalha
+      ? Math.max(toMinutes(end) - toMinutes(start) - ((schedule.saidaCafe && schedule.voltaCafe) ? (toMinutes(schedule.voltaCafe) - toMinutes(schedule.saidaCafe)) : 0), 0)
+      : 0;
+
+    return {
+      isWorkday: !!schedule.trabalha,
+      start,
+      end,
+      expectedMinutes,
+      weekday: normalizedWeekday,
+      schedule,
+    };
+  }
+
   /**
    * Calcula os minutos previstos para a jornada do dia
    */
@@ -216,6 +246,7 @@ const Calc = (() => {
     minutesToDisplay,
     minutesToBalanceDisplay,
     calculateWorkedMinutes,
+    getExpectedSchedule,
     getPredictedMinutes,
     getNextAction,
     getActionLabel,
