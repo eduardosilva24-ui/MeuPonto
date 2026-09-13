@@ -13,13 +13,12 @@ function parseDateKey(key) {
   if (parts.length < 3) {
     return new Date();
   }
-  // 15:00 UTC sempre pertence ao mesmo dia em America/Sao_Paulo.
-  return new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 15, 0, 0));
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
 }
 
 function getWeekdayName(date) {
   var weekdays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-  return weekdays[date.getUTCDay()];
+  return weekdays[date.getDay()];
 }
 
 function getMonthName(monthIndex) {
@@ -40,7 +39,7 @@ function getMonthCalendar(year, monthIndex) {
   var firstDay = parseDateKey(year + '-' + pad2(monthIndex + 1) + '-01');
   var lastDay = getLastDayOfMonth(year, monthIndex);
   var calendar = [];
-  var offset = (firstDay.getUTCDay() + 6) % 7;
+  var offset = (firstDay.getDay() + 6) % 7;
 
   for (var i = 0; i < offset; i += 1) {
     calendar.push(null);
